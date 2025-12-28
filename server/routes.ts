@@ -264,5 +264,49 @@ export async function registerRoutes(
     sendSuccess(res, { status: "healthy", timestamp: new Date().toISOString() });
   });
 
+  // WhatsApp Webhook Routes
+  const WEBHOOK_VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
+
+  app.get("/webhooks/whatsapp", (req: Request, res: Response) => {
+    const mode = req.query["hub.mode"] as string;
+    const token = req.query["hub.verify_token"] as string;
+    const challenge = req.query["hub.challenge"] as string;
+
+    if (mode === "subscribe" && WEBHOOK_VERIFY_TOKEN && token === WEBHOOK_VERIFY_TOKEN) {
+      console.log("Webhook verified successfully");
+      res.status(200).send(challenge);
+    } else {
+      console.log("Webhook verification failed", { mode, token });
+      res.status(403).send("Forbidden");
+    }
+  });
+
+  app.post("/webhooks/whatsapp", (req: Request, res: Response) => {
+    const body = req.body;
+    console.log("WhatsApp webhook received:", JSON.stringify(body, null, 2));
+    
+    if (body.object === "whatsapp_business_account") {
+      body.entry?.forEach((entry: any) => {
+        entry.changes?.forEach((change: any) => {
+          if (change.field === "messages") {
+            const messages = change.value?.messages;
+            if (messages) {
+              messages.forEach((message: any) => {
+                console.log("Message received:", {
+                  from: message.from,
+                  type: message.type,
+                  text: message.text?.body,
+                  timestamp: message.timestamp
+                });
+              });
+            }
+          }
+        });
+      });
+    }
+    
+    res.status(200).send("EVENT_RECEIVED");
+  });
+
   return httpServer;
 }

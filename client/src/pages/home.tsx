@@ -24,7 +24,7 @@ interface Endpoint {
   description: string;
   auth: boolean;
   requestBody?: object;
-  responseExample: object;
+  responseExample: object | string;
   parameters?: { name: string; type: string; description: string; required: boolean }[];
 }
 
@@ -275,6 +275,51 @@ const apiGroups: EndpointGroup[] = [
           success: true,
           data: { message: "Project deleted successfully" }
         }
+      }
+    ]
+  },
+  {
+    name: "Webhooks",
+    description: "WhatsApp Business API webhook endpoints",
+    endpoints: [
+      {
+        method: "GET",
+        path: "/webhooks/whatsapp",
+        description: "Verify webhook subscription (called by Meta)",
+        auth: false,
+        parameters: [
+          { name: "hub.mode", type: "string", description: "Should be 'subscribe'", required: true },
+          { name: "hub.verify_token", type: "string", description: "Your verification token", required: true },
+          { name: "hub.challenge", type: "string", description: "Challenge string to return", required: true }
+        ],
+        responseExample: "challenge_string"
+      },
+      {
+        method: "POST",
+        path: "/webhooks/whatsapp",
+        description: "Receive WhatsApp message events",
+        auth: false,
+        requestBody: {
+          object: "whatsapp_business_account",
+          entry: [{
+            id: "WHATSAPP_BUSINESS_ACCOUNT_ID",
+            changes: [{
+              field: "messages",
+              value: {
+                messaging_product: "whatsapp",
+                metadata: { display_phone_number: "1234567890", phone_number_id: "PHONE_NUMBER_ID" },
+                messages: [{
+                  from: "SENDER_PHONE_NUMBER",
+                  id: "MESSAGE_ID",
+                  timestamp: "1234567890",
+                  type: "text",
+                  text: { body: "Hello!" }
+                }]
+              }
+            }]
+          }]
+        },
+        responseExample: "EVENT_RECEIVED"
       }
     ]
   }

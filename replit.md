@@ -40,6 +40,10 @@ A fully-functional Express TypeScript API server with authentication, user manag
 - `PATCH /api/v1/projects/:id` - Update project
 - `DELETE /api/v1/projects/:id` - Delete project
 
+### Webhooks
+- `GET /webhooks/whatsapp` - WhatsApp webhook verification (Meta callback)
+- `POST /webhooks/whatsapp` - Receive WhatsApp message events
+
 ### Utility
 - `GET /api/v1/health` - Health check
 
@@ -82,7 +86,13 @@ npm run dev
 2. Login: `POST /api/v1/auth/login` with `{ username, password }`
 3. Use token: Include `Authorization: Bearer <token>` header
 
+## WhatsApp Webhook Setup
+1. Configure your webhook URL in Meta Developer Console: `https://your-domain/webhooks/whatsapp`
+2. Set the verify token to match `WEBHOOK_VERIFY_TOKEN` secret
+3. Subscribe to messages webhook field
+
 ## Notes
 - In-memory storage resets on server restart
 - For production, consider implementing PostgreSQL persistence
 - Password hashing uses SHA-256 (upgrade to bcrypt for production)
+- WhatsApp webhooks require HTTPS in production
