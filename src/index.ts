@@ -1,8 +1,13 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
+import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
+
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+const prisma = new PrismaClient({ adapter });
 
 app.use(cors());
 app.use(express.json());
@@ -13,6 +18,68 @@ app.get("/api/health", (_req: Request, res: Response) => {
 
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ ok: true, service: "sema-api" });
+});
+
+app.post("/api/whatsapp/connect", async (req: Request, res: Response) => {
+  try {
+    const { wabaId, phoneNumberId, accessToken, displayPhoneNumber } = req.body;
+
+    if (!wabaId || !phoneNumberId || !accessToken) {
+      res.status(400).json({ error: "wabaId, phoneNumberId, and accessToken are required" });
+      return;
+    }
+
+    const connection = await prisma.whatsappConnection.upsert({
+      where: { phoneNumberId },
+      update: {
+        wabaId,
+        accessToken,
+        displayPhoneNumber: displayPhoneNumber || null,
+      },
+      create: {
+        wabaId,
+        phoneNumberId,
+        accessToken,
+        displayPhoneNumber: displayPhoneNumber || null,
+      },
+    });
+
+    res.json({
+      id: connection.id,
+      wabaId: connection.wabaId,
+      phoneNumberId: connection.phoneNumberId,
+      accessToken: "***masked***",
+      displayPhoneNumber: connection.displayPhoneNumber,
+      createdAt: connection.createdAt,
+      updatedAt: connection.updatedAt,
+    });
+  } catch (error) {
+    console.error("Error saving connection:", error);
+    res.status(500).json({ error: "Failed to save connection" });
+  }
+});
+
+app.get("/api/whatsapp/connections", async (_req: Request, res: Response) => {
+  try {
+    const connections = await prisma.whatsappConnection.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+
+    const maskedConnections = connections.map((conn) => ({
+      id: conn.id,
+      wabaId: conn.wabaId,
+      phoneNumberId: conn.phoneNumberId,
+      accessToken: "***masked***",
+      displayPhoneNumber: conn.displayPhoneNumber,
+      createdAt: conn.createdAt,
+      updatedAt: conn.updatedAt,
+    }));
+
+    res.json(maskedConnections);
+  } catch (error) {
+    console.error("Error fetching connections:", error);
+    res.status(500).json({ error: "Failed to fetch connections" });
+  }
 });
 
 app.get("/webhooks/whatsapp", (req: Request, res: Response) => {
@@ -31,25 +98,39 @@ app.get("/webhooks/whatsapp", (req: Request, res: Response) => {
   }
 });
 
-app.post("/webhooks/whatsapp", (req: Request, res: Response) => {
+app.post("/webhooks/whatsapp", async (req: Request, res: Response) => {
   const body = req.body;
 
   if (body.object === "whatsapp_business_account") {
-    body.entry?.forEach((entry: any) => {
-      entry.changes?.forEach((change: any) => {
+    for (const entry of body.entry || []) {
+      for (const change of entry.changes || []) {
         if (change.field === "messages") {
+          const phoneNumberId = change.value?.metadata?.phone_number_id;
           const messages = change.value?.messages;
-          messages?.forEach((message: any) => {
-            console.log("Received message:", {
-              from: message.from,
-              type: message.type,
-              timestamp: message.timestamp,
-              text: message.text?.body,
+
+          if (phoneNumberId) {
+            const connection = await prisma.whatsappConnection.findUnique({
+              where: { phoneNumberId },
             });
-          });
+
+            if (connection) {
+              console.log(`Connection found for ${phoneNumberId}`);
+              
+              messages?.forEach((message: any) => {
+                console.log("Received message:", {
+                  from: message.from,
+                  type: message.type,
+                  timestamp: message.timestamp,
+                  text: message.text?.body,
+                });
+              });
+            } else {
+              console.log(`No connection for phone_number_id: ${phoneNumberId}`);
+            }
+          }
         }
-      });
-    });
+      }
+    }
 
     res.sendStatus(200);
   } else {
