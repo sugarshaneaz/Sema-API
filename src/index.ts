@@ -6,6 +6,8 @@ import { PrismaPg } from "@prisma/adapter-pg";
 const app = express();
 const port = Number(process.env.PORT || 3000);
 
+console.log(`DATABASE_URL configured: ${!!process.env.DATABASE_URL}`);
+
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
@@ -18,6 +20,16 @@ app.get("/api/health", (_req: Request, res: Response) => {
 
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ ok: true, service: "sema-api" });
+});
+
+app.get("/api/db/ping", async (_req: Request, res: Response) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Database ping failed:", error);
+    res.status(500).json({ ok: false, error: "Database connection failed" });
+  }
 });
 
 app.post("/api/whatsapp/connect", async (req: Request, res: Response) => {
@@ -54,7 +66,7 @@ app.post("/api/whatsapp/connect", async (req: Request, res: Response) => {
       updatedAt: connection.updatedAt,
     });
   } catch (error) {
-    console.error("Error saving connection:", error);
+    console.error("Error saving connection:", error instanceof Error ? error.stack : error);
     res.status(500).json({ error: "Failed to save connection" });
   }
 });
@@ -77,7 +89,7 @@ app.get("/api/whatsapp/connections", async (_req: Request, res: Response) => {
 
     res.json(maskedConnections);
   } catch (error) {
-    console.error("Error fetching connections:", error);
+    console.error("Error fetching connections:", error instanceof Error ? error.stack : error);
     res.status(500).json({ error: "Failed to fetch connections" });
   }
 });
@@ -109,23 +121,27 @@ app.post("/webhooks/whatsapp", async (req: Request, res: Response) => {
           const messages = change.value?.messages;
 
           if (phoneNumberId) {
-            const connection = await prisma.whatsappConnection.findUnique({
-              where: { phoneNumberId },
-            });
-
-            if (connection) {
-              console.log(`Connection found for ${phoneNumberId}`);
-              
-              messages?.forEach((message: any) => {
-                console.log("Received message:", {
-                  from: message.from,
-                  type: message.type,
-                  timestamp: message.timestamp,
-                  text: message.text?.body,
-                });
+            try {
+              const connection = await prisma.whatsappConnection.findUnique({
+                where: { phoneNumberId },
               });
-            } else {
-              console.log(`No connection for phone_number_id: ${phoneNumberId}`);
+
+              if (connection) {
+                console.log(`Connection found for ${phoneNumberId}`);
+                
+                messages?.forEach((message: any) => {
+                  console.log("Received message:", {
+                    from: message.from,
+                    type: message.type,
+                    timestamp: message.timestamp,
+                    text: message.text?.body,
+                  });
+                });
+              } else {
+                console.log(`No connection for phone_number_id: ${phoneNumberId}`);
+              }
+            } catch (error) {
+              console.error("Error looking up connection:", error instanceof Error ? error.stack : error);
             }
           }
         }

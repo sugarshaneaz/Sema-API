@@ -1,0 +1,50 @@
+Fix 1 — Make the database work in the published deployment
+A) Ensure DATABASE_URL exists for the published app
+
+On Replit, do BOTH:
+
+Replit Secrets (for the repl)
+
+Key: DATABASE_URL
+
+Value: your full Postgres URL
+
+Publishing / Deployment environment variables
+In the Publishing pane (where you see “Published your App”), click something like Manage / Settings / Environment variables (wording varies) and confirm DATABASE_URL is present there too.
+
+Why: In Replit, it’s common for a repl to have secrets available in dev, but the published deployment is missing them or using an older deploy snapshot.
+
+B) Make the build run Prisma generate + migrations
+
+Your published logs show it’s running compiled dist/index.cjs, so you need the Prisma client generated during build.
+
+Tell Replit AI this (copy/paste prompt)
+
+Paste into Replit AI inside sema-api:
+
+My published deployment can hit /api/health but /api/whatsapp/connections returns 500.
+Logs show Prisma EAI_AGAIN (DB host DNS/connection) and prisma.whatsappConnection.findMany failing.
+
+Fix publishing reliability:
+
+1) Ensure Prisma client is generated during build:
+   - Add scripts:
+     "prisma:generate": "prisma generate",
+     "prisma:migrate": "prisma migrate deploy",
+     "build": "prisma generate && prisma migrate deploy && tsc -p tsconfig.json"
+
+2) Add a startup check that logs whether DATABASE_URL is set (log only true/false, never the value).
+3) Improve /api/whatsapp/connections error logging:
+   - If Prisma throws, return 500 with a stable message and log the actual error stack.
+
+4) Add a new endpoint GET /api/db/ping that runs a trivial Prisma query (e.g. SELECT 1 or findFirst) and returns {ok:true} if DB reachable.
+
+After changes, republish.
+
+C) After republish: run this test
+curl -i https://sema-api--shanesylvester.replit.app/api/db/ping
+
+
+✅ Expected: 200 with { "ok": true }
+
+If it still fails with EAI_AGAIN, your DB host in DATABASE_URL is not resolvable from deployment (wrong URL / bad host / provider issue). In that case, easiest fix is: switch to Neon or Supabase Postgres and paste the new DATABASE_URL.
