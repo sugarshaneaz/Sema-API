@@ -24,11 +24,11 @@ app.get("/health", (_req: Request, res: Response) => {
 
 app.get("/api/db/ping", async (_req: Request, res: Response) => {
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await prisma.whatsappConnection.findFirst();
     res.json({ ok: true });
   } catch (error) {
-    console.error("Database ping failed:", error);
-    res.status(500).json({ ok: false, error: "Database connection failed" });
+    console.error("Database ping failed:", error instanceof Error ? error.stack : error);
+    res.status(500).json({ ok: false, error: "Database connection failed", code: "DB_PING_FAILED" });
   }
 });
 
@@ -90,7 +90,7 @@ app.get("/api/whatsapp/connections", async (_req: Request, res: Response) => {
     res.json(maskedConnections);
   } catch (error) {
     console.error("Error fetching connections:", error instanceof Error ? error.stack : error);
-    res.status(500).json({ error: "Failed to fetch connections" });
+    res.status(500).json({ error: "Failed to fetch connections", code: "CONNECTIONS_FETCH_FAILED" });
   }
 });
 
