@@ -110,47 +110,50 @@ app.get("/webhooks/whatsapp", (req: Request, res: Response) => {
   }
 });
 
-app.post("/webhooks/whatsapp", async (req: Request, res: Response) => {
+app.post("/webhooks/whatsapp", (req: Request, res: Response) => {
   const body = req.body;
+  
+  const phoneNumberId = body?.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
+  console.log("incoming webhook", { phone_number_id: phoneNumberId || null });
+
+  res.sendStatus(200);
 
   if (body.object === "whatsapp_business_account") {
-    for (const entry of body.entry || []) {
-      for (const change of entry.changes || []) {
-        if (change.field === "messages") {
-          const phoneNumberId = change.value?.metadata?.phone_number_id;
-          const messages = change.value?.messages;
+    (async () => {
+      for (const entry of body.entry || []) {
+        for (const change of entry.changes || []) {
+          if (change.field === "messages") {
+            const pnid = change.value?.metadata?.phone_number_id;
+            const messages = change.value?.messages;
 
-          if (phoneNumberId) {
-            try {
-              const connection = await prisma.whatsappConnection.findUnique({
-                where: { phoneNumberId },
-              });
-
-              if (connection) {
-                console.log(`Connection found for ${phoneNumberId}`);
-                
-                messages?.forEach((message: any) => {
-                  console.log("Received message:", {
-                    from: message.from,
-                    type: message.type,
-                    timestamp: message.timestamp,
-                    text: message.text?.body,
-                  });
+            if (pnid) {
+              try {
+                const connection = await prisma.whatsappConnection.findUnique({
+                  where: { phoneNumberId: pnid },
                 });
-              } else {
-                console.log(`No connection for phone_number_id: ${phoneNumberId}`);
+
+                if (connection) {
+                  console.log(`Connection found for ${pnid}`);
+                  
+                  messages?.forEach((message: any) => {
+                    console.log("Received message:", {
+                      from: message.from,
+                      type: message.type,
+                      timestamp: message.timestamp,
+                      text: message.text?.body,
+                    });
+                  });
+                } else {
+                  console.log(`No connection for phone_number_id: ${pnid}`);
+                }
+              } catch (error) {
+                console.error("Error looking up connection:", error instanceof Error ? error.stack : error);
               }
-            } catch (error) {
-              console.error("Error looking up connection:", error instanceof Error ? error.stack : error);
             }
           }
         }
       }
-    }
-
-    res.sendStatus(200);
-  } else {
-    res.sendStatus(404);
+    })();
   }
 });
 
