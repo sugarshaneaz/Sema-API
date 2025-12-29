@@ -1,98 +1,41 @@
-# Express TypeScript API Server
+# sema-api
 
 ## Overview
-A fully-functional Express TypeScript API server with authentication, user management, and project CRUD operations. Features a beautiful API documentation frontend.
+A minimal Express TypeScript API server with WhatsApp webhook integration.
 
 ## Current State
-- **Status**: Complete MVP
-- **Last Updated**: December 28, 2025
+- **Status**: Backend-only setup
+- **Last Updated**: December 29, 2025
 
 ## Architecture
 
 ### Backend (Express + TypeScript)
+- **Entry Point**: `src/server.ts`
 - **Server**: Express.js running on port 5000
-- **Storage**: In-memory storage (MemStorage class)
-- **Authentication**: Token-based auth with Bearer tokens
-- **API Version**: v1 (all routes prefixed with `/api/v1`)
-
-### Frontend (React + Vite)
-- **Framework**: React with TypeScript
-- **Styling**: Tailwind CSS with shadcn/ui components
-- **Purpose**: API documentation and reference UI
+- **Dependencies**: express, cors (minimal setup)
 
 ## API Endpoints
 
-### Authentication
-- `POST /api/v1/auth/register` - Register new user
-- `POST /api/v1/auth/login` - Login and get token
-- `POST /api/v1/auth/logout` - Invalidate session (requires auth)
-
-### Users (requires auth)
-- `GET /api/v1/users` - List all users
-- `GET /api/v1/users/me` - Get current user
-- `GET /api/v1/users/:id` - Get user by ID
-- `DELETE /api/v1/users/:id` - Delete own account
-
-### Projects (requires auth)
-- `GET /api/v1/projects` - List user's projects
-- `POST /api/v1/projects` - Create project
-- `GET /api/v1/projects/:id` - Get project by ID
-- `PATCH /api/v1/projects/:id` - Update project
-- `DELETE /api/v1/projects/:id` - Delete project
+### Health Check
+- `GET /api/health` - Health check endpoint
 
 ### Webhooks
 - `GET /webhooks/whatsapp` - WhatsApp webhook verification (Meta callback)
 - `POST /webhooks/whatsapp` - Receive WhatsApp message events
-
-### Utility
-- `GET /api/v1/health` - Health check
-
-## Response Format
-
-### Success
-```json
-{
-  "success": true,
-  "data": { ... },
-  "meta": { "total": 10 }
-}
-```
-
-### Error
-```json
-{
-  "success": false,
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Invalid request body",
-    "details": { ... }
-  }
-}
-```
-
-## Key Files
-- `server/routes.ts` - API route definitions
-- `server/storage.ts` - In-memory storage implementation
-- `shared/schema.ts` - Data models and validation schemas
-- `client/src/pages/home.tsx` - API documentation UI
-
-## Running the Server
-```bash
-npm run dev
-```
-
-## Authentication Flow
-1. Register: `POST /api/v1/auth/register` with `{ username, email, password }`
-2. Login: `POST /api/v1/auth/login` with `{ username, password }`
-3. Use token: Include `Authorization: Bearer <token>` header
 
 ## WhatsApp Webhook Setup
 1. Configure your webhook URL in Meta Developer Console: `https://your-domain/webhooks/whatsapp`
 2. Set the verify token to match `WEBHOOK_VERIFY_TOKEN` secret
 3. Subscribe to messages webhook field
 
+## Running the Server
+```bash
+npm run dev
+```
+
+## Key Files
+- `src/server.ts` - Main server entry point with all routes
+
 ## Notes
-- In-memory storage resets on server restart
-- For production, consider implementing PostgreSQL persistence
-- Password hashing uses SHA-256 (upgrade to bcrypt for production)
 - WhatsApp webhooks require HTTPS in production
+- Server binds to 0.0.0.0:5000
