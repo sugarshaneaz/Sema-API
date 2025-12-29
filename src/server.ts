@@ -11,6 +11,10 @@ app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+app.get("/health", (_req: Request, res: Response) => {
+  res.json({ ok: true, service: "sema-api" });
+});
+
 app.get("/webhooks/whatsapp", (req: Request, res: Response) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
