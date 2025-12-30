@@ -35,8 +35,15 @@ app.get("/api/db/ping", async (_req: Request, res: Response) => {
     await prisma.whatsappConnection.findFirst();
     res.json({ ok: true });
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorName = error instanceof Error ? error.name : "Unknown";
     console.error("Database ping failed:", error instanceof Error ? error.stack : error);
-    res.status(500).json({ ok: false, error: "Database connection failed", code: "DB_PING_FAILED" });
+    res.status(500).json({ 
+      ok: false, 
+      error: "Database connection failed", 
+      code: "DB_PING_FAILED",
+      details: { name: errorName, message: errorMessage.substring(0, 200) }
+    });
   }
 });
 
