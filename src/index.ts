@@ -138,48 +138,58 @@ app.get("/webhooks/whatsapp", (req: Request, res: Response) => {
 app.post("/webhooks/whatsapp", (req: Request, res: Response) => {
   const body = req.body;
   
-  const phoneNumberId = body?.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
-  console.log("incoming webhook", { phone_number_id: phoneNumberId || null });
-
   res.sendStatus(200);
 
-  if (body.object === "whatsapp_business_account") {
-    (async () => {
-      for (const entry of body.entry || []) {
-        for (const change of entry.changes || []) {
-          if (change.field === "messages") {
-            const pnid = change.value?.metadata?.phone_number_id;
-            const messages = change.value?.messages;
+  (async () => {
+    try {
+      const value = body?.entry?.[0]?.changes?.[0]?.value;
+      const phoneNumberId = value?.metadata?.phone_number_id;
+      const msg = value?.messages?.[0];
+      const from = msg?.from;
+      const text = msg?.text?.body || "(no text)";
 
-            if (pnid) {
-              try {
-                const connection = await prisma.whatsappConnection.findUnique({
-                  where: { phoneNumberId: pnid },
-                });
+      console.log("incoming webhook", { phone_number_id: phoneNumberId || null, from: from || null });
 
-                if (connection) {
-                  console.log(`Connection found for ${pnid}`);
-                  
-                  messages?.forEach((message: any) => {
-                    console.log("Received message:", {
-                      from: message.from,
-                      type: message.type,
-                      timestamp: message.timestamp,
-                      text: message.text?.body,
-                    });
-                  });
-                } else {
-                  console.log(`No connection for phone_number_id: ${pnid}`);
-                }
-              } catch (error) {
-                console.error("Error looking up connection:", error instanceof Error ? error.stack : error);
-              }
-            }
-          }
-        }
+      if (!phoneNumberId || !from) {
+        console.log("Missing phoneNumberId or from, skipping auto-reply");
+        return;
       }
-    })();
-  }
+
+      const connection = await prisma.whatsappConnection.findUnique({
+        where: { phoneNumberId },
+      });
+
+      if (!connection) {
+        console.log(`No connection found for phone_number_id: ${phoneNumberId}`);
+        return;
+      }
+
+      console.log(`Connection found for ${phoneNumberId}, sending auto-reply to ${from}`);
+
+      const graphResponse = await fetch(
+        `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${connection.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messaging_product: "whatsapp",
+            to: from,
+            type: "text",
+            text: { body: "Sema ✅ I received: " + text },
+          }),
+        }
+      );
+
+      const graphBody = await graphResponse.text();
+      console.log("Graph API response:", { status: graphResponse.status, body: graphBody });
+
+    } catch (error) {
+      console.error("Error processing webhook:", error instanceof Error ? error.stack : error);
+    }
+  })();
 });
 
 app.listen(port, "0.0.0.0", () => {
