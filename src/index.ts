@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
+import { createHash } from "crypto";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
@@ -27,6 +28,15 @@ app.get("/api/debug/env", (_req: Request, res: Response) => {
     hasDbUrl: !!process.env.DATABASE_URL,
     dbUrlPrefix: process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 30) + "..." : null,
     nodeEnv: process.env.NODE_ENV || "not set",
+  });
+});
+
+app.get("/api/debug/dbinfo", (_req: Request, res: Response) => {
+  const url = process.env.DATABASE_URL || "";
+  res.json({
+    hasDbUrl: Boolean(url),
+    dbUrlPrefix: url ? url.slice(0, 25) : null,
+    dbUrlHash: url ? createHash("sha256").update(url).digest("hex").slice(0, 12) : null,
   });
 });
 
