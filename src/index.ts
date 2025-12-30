@@ -22,6 +22,14 @@ app.get("/health", (_req: Request, res: Response) => {
   res.json({ ok: true, service: "sema-api" });
 });
 
+app.get("/api/debug/env", (_req: Request, res: Response) => {
+  res.json({
+    hasDbUrl: !!process.env.DATABASE_URL,
+    dbUrlPrefix: process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 30) + "..." : null,
+    nodeEnv: process.env.NODE_ENV || "not set",
+  });
+});
+
 app.get("/api/db/ping", async (_req: Request, res: Response) => {
   try {
     await prisma.whatsappConnection.findFirst();
