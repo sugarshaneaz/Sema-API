@@ -16,6 +16,19 @@ const prisma = new PrismaClient({ adapter });
 app.use(cors());
 app.use(express.json());
 
+app.get("/", (_req: Request, res: Response) => {
+  res.json({
+    name: "sema-api",
+    version: "1.0.0",
+    description: "WhatsApp Business API with multi-niche AI agent support",
+    endpoints: {
+      health: "/api/health",
+      niches: "/api/niches",
+      webhook: "/webhooks/whatsapp"
+    }
+  });
+});
+
 app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
