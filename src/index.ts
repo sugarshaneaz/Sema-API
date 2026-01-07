@@ -3,6 +3,7 @@ import cors from "cors";
 import { createHash } from "crypto";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { loadBusinessContext, checkSafetyTriggers, generateAIResponse, type ConversationMessage } from "./promptBuilder";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -157,6 +158,7 @@ app.post("/webhooks/whatsapp", (req: Request, res: Response) => {
 
       const connection = await prisma.whatsappConnection.findUnique({
         where: { phoneNumberId },
+        include: { businessProfile: true },
       });
 
       if (!connection) {
@@ -164,7 +166,70 @@ app.post("/webhooks/whatsapp", (req: Request, res: Response) => {
         return;
       }
 
-      console.log(`Connection found for ${phoneNumberId}, sending auto-reply to ${from}`);
+      console.log(`Connection found for ${phoneNumberId}, processing message from ${from}`);
+
+      let conversation = await prisma.conversation.findUnique({
+        where: { connectionId_customerPhone: { connectionId: connection.id, customerPhone: from } },
+      });
+
+      if (!conversation) {
+        conversation = await prisma.conversation.create({
+          data: { connectionId: connection.id, customerPhone: from },
+        });
+      }
+
+      if (conversation.needsHuman) {
+        console.log(`Conversation ${conversation.id} is escalated, skipping AI reply`);
+        return;
+      }
+
+      const history = (conversation.messageHistory as unknown as ConversationMessage[]) || [];
+
+      const businessContext = await loadBusinessContext(prisma, connection.id);
+
+      let replyText: string;
+
+      if (!businessContext) {
+        replyText = "Sema ✅ I received: " + text;
+        console.log("No business profile configured, using fallback reply");
+      } else {
+        const safetyCheck = checkSafetyTriggers(text, businessContext.template);
+
+        if (safetyCheck.shouldRefuse) {
+          replyText = safetyCheck.message || "I'm not able to help with that request.";
+          console.log("Safety refusal triggered");
+        } else if (safetyCheck.shouldEscalate) {
+          await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              needsHuman: true,
+              escalationReason: `Triggered by message: "${text.slice(0, 100)}"`,
+              status: "escalated",
+            },
+          });
+          replyText = safetyCheck.message || "Let me connect you with someone who can help better.";
+          console.log("Escalation triggered, conversation marked for human handoff");
+        } else {
+          try {
+            replyText = await generateAIResponse(businessContext, text, history);
+            console.log("AI response generated successfully");
+          } catch (aiError) {
+            console.error("AI generation failed:", aiError instanceof Error ? aiError.message : aiError);
+            replyText = "I'm having trouble processing your request. Please try again in a moment.";
+          }
+        }
+      }
+
+      const updatedHistory: ConversationMessage[] = [
+        ...history.slice(-19),
+        { role: "user", content: text },
+        { role: "assistant", content: replyText },
+      ];
+
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { messageHistory: updatedHistory as unknown as any },
+      });
 
       const graphResponse = await fetch(
         `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
@@ -178,7 +243,7 @@ app.post("/webhooks/whatsapp", (req: Request, res: Response) => {
             messaging_product: "whatsapp",
             to: from,
             type: "text",
-            text: { body: "Sema ✅ I received: " + text },
+            text: { body: replyText },
           }),
         }
       );
@@ -747,6 +812,145 @@ app.delete("/api/products/:id", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error deleting product:", error);
     res.status(500).json({ error: "Failed to delete product" });
+  }
+});
+
+// ============ CONVERSATION ENDPOINTS ============
+
+async function getConnectionFromHeader(req: Request): Promise<{ connectionId: string; businessId: string } | null> {
+  const phoneNumberId = req.headers["x-phone-number-id"] as string;
+  if (!phoneNumberId) return null;
+
+  const connection = await prisma.whatsappConnection.findUnique({
+    where: { phoneNumberId },
+    include: { businessProfile: true }
+  });
+
+  if (!connection) return null;
+
+  return { 
+    connectionId: connection.id, 
+    businessId: connection.businessProfile?.id || ""
+  };
+}
+
+app.get("/api/conversations", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getConnectionFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const conversations = await prisma.conversation.findMany({
+      where: { connectionId: ctx.connectionId },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        customerPhone: true,
+        status: true,
+        needsHuman: true,
+        escalationReason: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    res.json(conversations);
+  } catch (error) {
+    console.error("Error fetching conversations:", error);
+    res.status(500).json({ error: "Failed to fetch conversations" });
+  }
+});
+
+app.get("/api/conversations/:id", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getConnectionFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { id } = req.params;
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, connectionId: ctx.connectionId },
+    });
+
+    if (!conversation) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    res.json(conversation);
+  } catch (error) {
+    console.error("Error fetching conversation:", error);
+    res.status(500).json({ error: "Failed to fetch conversation" });
+  }
+});
+
+app.put("/api/conversations/:id/resolve", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getConnectionFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { id } = req.params;
+
+    const result = await prisma.conversation.updateMany({
+      where: { id, connectionId: ctx.connectionId },
+      data: {
+        needsHuman: false,
+        status: "active",
+        escalationReason: null,
+      },
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    const updated = await prisma.conversation.findUnique({ where: { id } });
+    res.json(updated);
+  } catch (error) {
+    console.error("Error resolving conversation:", error);
+    res.status(500).json({ error: "Failed to resolve conversation" });
+  }
+});
+
+app.put("/api/conversations/:id/escalate", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getConnectionFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const result = await prisma.conversation.updateMany({
+      where: { id, connectionId: ctx.connectionId },
+      data: {
+        needsHuman: true,
+        status: "escalated",
+        escalationReason: reason || "Manual escalation",
+      },
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    const updated = await prisma.conversation.findUnique({ where: { id } });
+    res.json(updated);
+  } catch (error) {
+    console.error("Error escalating conversation:", error);
+    res.status(500).json({ error: "Failed to escalate conversation" });
   }
 });
 
