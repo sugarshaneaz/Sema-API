@@ -1,0 +1,107 @@
+You are my senior backend engineer. This repo is BACKEND ONLY. DO NOT implement frontend UI. Your job is to add multi-niche support, niche templates, business knowledge sources, and AI prompt assembly so the WhatsApp/AI agent can use niche knowledge + business facts safely.
+
+FIRST: Inspect the repo to identify:
+- language/framework (Node/Express, Fastify, Nest, Next API, Python, etc.)
+- database + ORM (Postgres/Supabase/Prisma/Drizzle/Mongoose/etc.)
+- current Business schema, Product/Menu schema, FAQs/policies if any
+- auth/tenant logic (how to identify business/account)
+- WhatsApp webhook handling and current AI prompt builder code
+Then extend the existing patterns (do not rewrite architecture).
+
+A) DATA MODEL / SCHEMA
+Extend existing tables/collections; do not duplicate.
+Must support:
+1) Niche
+  - id (slug), label, version, isActive
+2) NicheTemplate
+  - nicheId (FK), templateJson, updatedAt
+3) BusinessProfile (or extend Business)
+  - nicheId
+  - languagePreference (sw/en/mix)
+  - tonePreference (professional/friendly)
+  - handoffRules JSON
+  - intakeAnswers JSON (answers to niche intake questions)
+4) KnowledgeSource
+  - businessId
+  - type enum: CATALOG | FAQ | POLICIES | WEBSITE | DOCUMENT | NOTES
+  - title, contentText, metaJson, isEnabled, createdAt
+5) FAQItem (optional if not storing in KnowledgeSource)
+  - businessId, question, answer, isEnabled
+6) ProductOrService (use existing product/menu table)
+  - businessId, name, price, currency, description, category, isActive, sku(optional), imageUrl(optional)
+7) Policies (optional if not storing in KnowledgeSource)
+  - businessId, returnsPolicyText, warrantyPolicyText, deliveryPolicyText, paymentMethodsJson
+
+B) SEED 12 NICHES + TEMPLATES (IDEMPOTENT)
+Create seed function that upserts:
+- restaurant_cafe
+- grocery_minimart
+- electronics_phone
+- computers_accessories
+- hardware_building
+- beauty_supply
+- salon_services
+- clothing_shoes
+- home_decor_furniture
+- auto_parts
+- pharmacy_guardrailed
+- general_retail
+
+Each templateJson MUST include:
+- systemRules (never guess, use business facts first, always ask clarifying questions, always end with next action)
+- intakeQuestions (2–8 max)
+- qualificationFlows (trigger phrases + follow-up questions)
+- starterFaqs (common Q/A placeholders)
+- upsellRules (simple)
+- safety rules (escalate/refuse triggers)
+Pharmacy template MUST include strict refusal/escalation rules:
+- refuse diagnosing/prescribing/interactions
+- escalate pregnancy/children dosing/severe symptoms/adverse reactions
+
+C) API ENDPOINTS (AUTH + TENANCY ENFORCED)
+Expose:
+- GET /niches
+- GET /niches/:id/template (return template summary + intake questions)
+- GET /business/profile
+- PUT /business/profile (nicheId, languagePreference, tonePreference, handoffRules, intakeAnswers)
+- CRUD /knowledge-sources
+- CRUD /faqs (or manage FAQs as KnowledgeSource items)
+- GET/PUT /policies (or store as POLICIES knowledge source)
+Ensure all endpoints scope by authenticated business/account and cannot cross-tenant.
+
+D) AI PROMPT ASSEMBLY (WHATSAPP REPLIES)
+Update the AI response pipeline:
+1) Identify businessId from inbound WhatsApp number or routing table
+2) Load business profile + selected niche template
+3) Load enabled knowledge sources:
+   - catalog summary (from products/services)
+   - FAQs (enabled)
+   - policies
+   - notes
+   - website/document summaries if available
+4) Build a single system prompt with structured sections:
+   - GLOBAL RULES: do not hallucinate; if unknown ask; never invent prices/stock/policies
+   - NICHE RULES: qualification flows; upsell rules; safety rules
+   - BUSINESS FACTS: hours, location, delivery, returns, warranty
+   - CATALOG SUMMARY: concise list of top items/categories + prices
+5) Add conversation history as usual
+6) Enforce pharmacy guardrails: refusal/escalation logic must be explicit in prompt and also validated in code with a safety check that triggers escalation when keywords appear.
+
+E) “HANDOFF TO HUMAN” SUPPORT
+Add support for handoff rules:
+- if negotiation/complaints/out-of-stock/medical triggers -> mark conversation as needs_human and stop AI or respond with handoff message
+Store a conversation flag so frontend can show “Escalated”.
+
+F) TESTS / VALIDATION
+Add minimal validation:
+- business must have nicheId after onboarding (allow null for existing users but enforce on next save)
+- template retrieval must not crash if missing (fallback to general_retail)
+- prompt builder must handle empty catalog/empty sources
+- seed runs idempotently
+
+G) OUTPUT
+Provide:
+1) Change summary
+2) Migrations + seed instructions
+3) File-by-file code changes
+4) Example request/response payloads for each endpoint

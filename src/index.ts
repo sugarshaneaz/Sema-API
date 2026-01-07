@@ -192,6 +192,564 @@ app.post("/webhooks/whatsapp", (req: Request, res: Response) => {
   })();
 });
 
+// ============ NICHE ENDPOINTS ============
+
+app.get("/api/niches", async (_req: Request, res: Response) => {
+  try {
+    const niches = await prisma.niche.findMany({
+      where: { isActive: true },
+      orderBy: { label: "asc" },
+      select: { id: true, label: true, version: true }
+    });
+    res.json(niches);
+  } catch (error) {
+    console.error("Error fetching niches:", error);
+    res.status(500).json({ error: "Failed to fetch niches" });
+  }
+});
+
+app.get("/api/niches/:id/template", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const niche = await prisma.niche.findUnique({
+      where: { id },
+      include: { template: true }
+    });
+
+    if (!niche) {
+      const fallback = await prisma.niche.findUnique({
+        where: { id: "general_retail" },
+        include: { template: true }
+      });
+      if (fallback?.template) {
+        res.json({
+          nicheId: fallback.id,
+          label: fallback.label,
+          intakeQuestions: (fallback.template.templateJson as any).intakeQuestions || [],
+          template: fallback.template.templateJson
+        });
+        return;
+      }
+      res.status(404).json({ error: "Niche not found" });
+      return;
+    }
+
+    res.json({
+      nicheId: niche.id,
+      label: niche.label,
+      intakeQuestions: niche.template ? (niche.template.templateJson as any).intakeQuestions || [] : [],
+      template: niche.template?.templateJson || null
+    });
+  } catch (error) {
+    console.error("Error fetching niche template:", error);
+    res.status(500).json({ error: "Failed to fetch niche template" });
+  }
+});
+
+// ============ BUSINESS PROFILE ENDPOINTS ============
+
+async function getBusinessFromHeader(req: Request): Promise<{ connectionId: string; businessId: string } | null> {
+  const phoneNumberId = req.headers["x-phone-number-id"] as string;
+  if (!phoneNumberId) return null;
+
+  const connection = await prisma.whatsappConnection.findUnique({
+    where: { phoneNumberId },
+    include: { businessProfile: true }
+  });
+
+  if (!connection) return null;
+
+  if (!connection.businessProfile) {
+    const profile = await prisma.businessProfile.create({
+      data: { connectionId: connection.id }
+    });
+    return { connectionId: connection.id, businessId: profile.id };
+  }
+
+  return { connectionId: connection.id, businessId: connection.businessProfile.id };
+}
+
+app.get("/api/business/profile", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const profile = await prisma.businessProfile.findUnique({
+      where: { id: ctx.businessId },
+      include: { niche: true }
+    });
+
+    res.json(profile);
+  } catch (error) {
+    console.error("Error fetching business profile:", error);
+    res.status(500).json({ error: "Failed to fetch business profile" });
+  }
+});
+
+app.put("/api/business/profile", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { nicheId, businessName, languagePreference, tonePreference, handoffRules, intakeAnswers } = req.body;
+
+    if (nicheId) {
+      const niche = await prisma.niche.findUnique({ where: { id: nicheId } });
+      if (!niche) {
+        res.status(400).json({ error: "Invalid nicheId" });
+        return;
+      }
+    }
+
+    const profile = await prisma.businessProfile.update({
+      where: { id: ctx.businessId },
+      data: {
+        ...(nicheId !== undefined && { nicheId }),
+        ...(businessName !== undefined && { businessName }),
+        ...(languagePreference !== undefined && { languagePreference }),
+        ...(tonePreference !== undefined && { tonePreference }),
+        ...(handoffRules !== undefined && { handoffRules }),
+        ...(intakeAnswers !== undefined && { intakeAnswers })
+      },
+      include: { niche: true }
+    });
+
+    res.json(profile);
+  } catch (error) {
+    console.error("Error updating business profile:", error);
+    res.status(500).json({ error: "Failed to update business profile" });
+  }
+});
+
+// ============ KNOWLEDGE SOURCE ENDPOINTS ============
+
+app.get("/api/knowledge-sources", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const sources = await prisma.knowledgeSource.findMany({
+      where: { businessId: ctx.businessId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    res.json(sources);
+  } catch (error) {
+    console.error("Error fetching knowledge sources:", error);
+    res.status(500).json({ error: "Failed to fetch knowledge sources" });
+  }
+});
+
+app.post("/api/knowledge-sources", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { type, title, contentText, metaJson, isEnabled } = req.body;
+
+    if (!type || !title || !contentText) {
+      res.status(400).json({ error: "type, title, and contentText are required" });
+      return;
+    }
+
+    const source = await prisma.knowledgeSource.create({
+      data: {
+        businessId: ctx.businessId,
+        type,
+        title,
+        contentText,
+        metaJson: metaJson || {},
+        isEnabled: isEnabled !== false
+      }
+    });
+
+    res.status(201).json(source);
+  } catch (error) {
+    console.error("Error creating knowledge source:", error);
+    res.status(500).json({ error: "Failed to create knowledge source" });
+  }
+});
+
+app.put("/api/knowledge-sources/:id", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { id } = req.params;
+    const { type, title, contentText, metaJson, isEnabled } = req.body;
+
+    const existing = await prisma.knowledgeSource.findFirst({
+      where: { id, businessId: ctx.businessId }
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Knowledge source not found" });
+      return;
+    }
+
+    const source = await prisma.knowledgeSource.update({
+      where: { id },
+      data: {
+        ...(type !== undefined && { type }),
+        ...(title !== undefined && { title }),
+        ...(contentText !== undefined && { contentText }),
+        ...(metaJson !== undefined && { metaJson }),
+        ...(isEnabled !== undefined && { isEnabled })
+      }
+    });
+
+    res.json(source);
+  } catch (error) {
+    console.error("Error updating knowledge source:", error);
+    res.status(500).json({ error: "Failed to update knowledge source" });
+  }
+});
+
+app.delete("/api/knowledge-sources/:id", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { id } = req.params;
+
+    const existing = await prisma.knowledgeSource.findFirst({
+      where: { id, businessId: ctx.businessId }
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Knowledge source not found" });
+      return;
+    }
+
+    await prisma.knowledgeSource.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting knowledge source:", error);
+    res.status(500).json({ error: "Failed to delete knowledge source" });
+  }
+});
+
+// ============ FAQ ENDPOINTS ============
+
+app.get("/api/faqs", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const faqs = await prisma.fAQItem.findMany({
+      where: { businessId: ctx.businessId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    res.json(faqs);
+  } catch (error) {
+    console.error("Error fetching FAQs:", error);
+    res.status(500).json({ error: "Failed to fetch FAQs" });
+  }
+});
+
+app.post("/api/faqs", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { question, answer, isEnabled } = req.body;
+
+    if (!question || !answer) {
+      res.status(400).json({ error: "question and answer are required" });
+      return;
+    }
+
+    const faq = await prisma.fAQItem.create({
+      data: {
+        businessId: ctx.businessId,
+        question,
+        answer,
+        isEnabled: isEnabled !== false
+      }
+    });
+
+    res.status(201).json(faq);
+  } catch (error) {
+    console.error("Error creating FAQ:", error);
+    res.status(500).json({ error: "Failed to create FAQ" });
+  }
+});
+
+app.put("/api/faqs/:id", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { id } = req.params;
+    const { question, answer, isEnabled } = req.body;
+
+    const existing = await prisma.fAQItem.findFirst({
+      where: { id, businessId: ctx.businessId }
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "FAQ not found" });
+      return;
+    }
+
+    const faq = await prisma.fAQItem.update({
+      where: { id },
+      data: {
+        ...(question !== undefined && { question }),
+        ...(answer !== undefined && { answer }),
+        ...(isEnabled !== undefined && { isEnabled })
+      }
+    });
+
+    res.json(faq);
+  } catch (error) {
+    console.error("Error updating FAQ:", error);
+    res.status(500).json({ error: "Failed to update FAQ" });
+  }
+});
+
+app.delete("/api/faqs/:id", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { id } = req.params;
+
+    const existing = await prisma.fAQItem.findFirst({
+      where: { id, businessId: ctx.businessId }
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "FAQ not found" });
+      return;
+    }
+
+    await prisma.fAQItem.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting FAQ:", error);
+    res.status(500).json({ error: "Failed to delete FAQ" });
+  }
+});
+
+// ============ POLICIES ENDPOINTS ============
+
+app.get("/api/policies", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    let policies = await prisma.policies.findUnique({
+      where: { businessId: ctx.businessId }
+    });
+
+    if (!policies) {
+      policies = await prisma.policies.create({
+        data: { businessId: ctx.businessId }
+      });
+    }
+
+    res.json(policies);
+  } catch (error) {
+    console.error("Error fetching policies:", error);
+    res.status(500).json({ error: "Failed to fetch policies" });
+  }
+});
+
+app.put("/api/policies", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { returnsPolicyText, warrantyPolicyText, deliveryPolicyText, paymentMethodsJson } = req.body;
+
+    const policies = await prisma.policies.upsert({
+      where: { businessId: ctx.businessId },
+      update: {
+        ...(returnsPolicyText !== undefined && { returnsPolicyText }),
+        ...(warrantyPolicyText !== undefined && { warrantyPolicyText }),
+        ...(deliveryPolicyText !== undefined && { deliveryPolicyText }),
+        ...(paymentMethodsJson !== undefined && { paymentMethodsJson })
+      },
+      create: {
+        businessId: ctx.businessId,
+        returnsPolicyText: returnsPolicyText || null,
+        warrantyPolicyText: warrantyPolicyText || null,
+        deliveryPolicyText: deliveryPolicyText || null,
+        paymentMethodsJson: paymentMethodsJson || []
+      }
+    });
+
+    res.json(policies);
+  } catch (error) {
+    console.error("Error updating policies:", error);
+    res.status(500).json({ error: "Failed to update policies" });
+  }
+});
+
+// ============ PRODUCTS/SERVICES ENDPOINTS ============
+
+app.get("/api/products", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const products = await prisma.productOrService.findMany({
+      where: { businessId: ctx.businessId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    res.json(products);
+  } catch (error) {
+    console.error("Error fetching products:", error);
+    res.status(500).json({ error: "Failed to fetch products" });
+  }
+});
+
+app.post("/api/products", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { name, price, currency, description, category, isActive, sku, imageUrl } = req.body;
+
+    if (!name) {
+      res.status(400).json({ error: "name is required" });
+      return;
+    }
+
+    const product = await prisma.productOrService.create({
+      data: {
+        businessId: ctx.businessId,
+        name,
+        price: price || null,
+        currency: currency || "KES",
+        description: description || null,
+        category: category || null,
+        isActive: isActive !== false,
+        sku: sku || null,
+        imageUrl: imageUrl || null
+      }
+    });
+
+    res.status(201).json(product);
+  } catch (error) {
+    console.error("Error creating product:", error);
+    res.status(500).json({ error: "Failed to create product" });
+  }
+});
+
+app.put("/api/products/:id", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { id } = req.params;
+    const { name, price, currency, description, category, isActive, sku, imageUrl } = req.body;
+
+    const existing = await prisma.productOrService.findFirst({
+      where: { id, businessId: ctx.businessId }
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Product not found" });
+      return;
+    }
+
+    const product = await prisma.productOrService.update({
+      where: { id },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(price !== undefined && { price }),
+        ...(currency !== undefined && { currency }),
+        ...(description !== undefined && { description }),
+        ...(category !== undefined && { category }),
+        ...(isActive !== undefined && { isActive }),
+        ...(sku !== undefined && { sku }),
+        ...(imageUrl !== undefined && { imageUrl })
+      }
+    });
+
+    res.json(product);
+  } catch (error) {
+    console.error("Error updating product:", error);
+    res.status(500).json({ error: "Failed to update product" });
+  }
+});
+
+app.delete("/api/products/:id", async (req: Request, res: Response) => {
+  try {
+    const ctx = await getBusinessFromHeader(req);
+    if (!ctx) {
+      res.status(401).json({ error: "Missing or invalid X-Phone-Number-Id header" });
+      return;
+    }
+
+    const { id } = req.params;
+
+    const existing = await prisma.productOrService.findFirst({
+      where: { id, businessId: ctx.businessId }
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Product not found" });
+      return;
+    }
+
+    await prisma.productOrService.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting product:", error);
+    res.status(500).json({ error: "Failed to delete product" });
+  }
+});
+
 app.listen(port, "0.0.0.0", () => {
   console.log(`sema-api listening on port ${port}`);
 });
