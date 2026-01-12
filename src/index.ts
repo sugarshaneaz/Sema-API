@@ -1,6 +1,7 @@
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
+import { OrderStatus } from "@prisma/client";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { loadBusinessContext, checkSafetyTriggers, generateAIResponse, type ConversationMessage } from "./promptBuilder";
@@ -964,6 +965,605 @@ app.put("/api/conversations/:id/escalate", async (req: Request, res: Response) =
   } catch (error) {
     console.error("Error escalating conversation:", error);
     res.status(500).json({ error: "Failed to escalate conversation" });
+  }
+});
+
+// ============ ADMIN AUTH & MANAGEMENT ============
+
+interface AdminSession {
+  adminId: string;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+const adminSessions = new Map<string, AdminSession>();
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+function hashPassword(password: string, salt: string): string {
+  return createHash("sha256").update(salt + password).digest("hex");
+}
+
+function generateToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+function generateSalt(): string {
+  return randomBytes(16).toString("hex");
+}
+
+interface AuthenticatedRequest extends Request {
+  admin?: {
+    id: string;
+    email: string;
+    name: string;
+    restaurantId?: string;
+  };
+}
+
+async function requireAdminAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Missing or invalid Authorization header" });
+    return;
+  }
+
+  const token = authHeader.substring(7);
+  const session = adminSessions.get(token);
+
+  if (!session) {
+    res.status(401).json({ error: "Invalid or expired token" });
+    return;
+  }
+
+  if (new Date() > session.expiresAt) {
+    adminSessions.delete(token);
+    res.status(401).json({ error: "Token expired" });
+    return;
+  }
+
+  const admin = await prisma.admin.findUnique({
+    where: { id: session.adminId },
+    include: { restaurant: true },
+  });
+
+  if (!admin) {
+    adminSessions.delete(token);
+    res.status(401).json({ error: "Admin not found" });
+    return;
+  }
+
+  req.admin = {
+    id: admin.id,
+    email: admin.email,
+    name: admin.name,
+    restaurantId: admin.restaurant?.id,
+  };
+
+  next();
+}
+
+app.post("/api/admin/register", async (req: Request, res: Response) => {
+  try {
+    const { email, password, name } = req.body;
+
+    if (!email || !password || !name) {
+      res.status(400).json({ error: "email, password, and name are required" });
+      return;
+    }
+
+    if (password.length < 6) {
+      res.status(400).json({ error: "Password must be at least 6 characters" });
+      return;
+    }
+
+    const existing = await prisma.admin.findUnique({ where: { email } });
+    if (existing) {
+      res.status(409).json({ error: "Email already registered" });
+      return;
+    }
+
+    const salt = generateSalt();
+    const passwordHash = hashPassword(password, salt);
+
+    const admin = await prisma.admin.create({
+      data: { email, passwordHash, salt, name },
+    });
+
+    const token = generateToken();
+    adminSessions.set(token, {
+      adminId: admin.id,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+    });
+
+    res.status(201).json({
+      token,
+      admin: { id: admin.id, email: admin.email, name: admin.name },
+    });
+  } catch (error) {
+    console.error("Error registering admin:", error);
+    res.status(500).json({ error: "Failed to register admin" });
+  }
+});
+
+app.post("/api/admin/login", async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      res.status(400).json({ error: "email and password are required" });
+      return;
+    }
+
+    const admin = await prisma.admin.findUnique({
+      where: { email },
+      include: { restaurant: true },
+    });
+
+    if (!admin) {
+      res.status(401).json({ error: "Invalid email or password" });
+      return;
+    }
+
+    const hash = hashPassword(password, admin.salt);
+    if (hash !== admin.passwordHash) {
+      res.status(401).json({ error: "Invalid email or password" });
+      return;
+    }
+
+    const token = generateToken();
+    adminSessions.set(token, {
+      adminId: admin.id,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+    });
+
+    res.json({
+      token,
+      admin: {
+        id: admin.id,
+        email: admin.email,
+        name: admin.name,
+        restaurantId: admin.restaurant?.id,
+      },
+    });
+  } catch (error) {
+    console.error("Error logging in admin:", error);
+    res.status(500).json({ error: "Failed to login" });
+  }
+});
+
+app.post("/api/admin/logout", async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    adminSessions.delete(token);
+  }
+  res.json({ success: true });
+});
+
+app.get("/api/admin/me", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const admin = await prisma.admin.findUnique({
+      where: { id: req.admin!.id },
+      include: { restaurant: true },
+    });
+
+    if (!admin) {
+      res.status(404).json({ error: "Admin not found" });
+      return;
+    }
+
+    res.json({
+      id: admin.id,
+      email: admin.email,
+      name: admin.name,
+      restaurant: admin.restaurant ? {
+        id: admin.restaurant.id,
+        name: admin.restaurant.name,
+        phone: admin.restaurant.phone,
+        address: admin.restaurant.address,
+        description: admin.restaurant.description,
+        logoUrl: admin.restaurant.logoUrl,
+        colors: admin.restaurant.colors,
+        settings: admin.restaurant.settings,
+      } : null,
+      createdAt: admin.createdAt,
+    });
+  } catch (error) {
+    console.error("Error fetching admin:", error);
+    res.status(500).json({ error: "Failed to fetch admin info" });
+  }
+});
+
+app.post("/api/admin/restaurant", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.admin!.restaurantId) {
+      res.status(409).json({ error: "You already have a restaurant" });
+      return;
+    }
+
+    const { name, phone, address, description, logoUrl, colors, settings } = req.body;
+
+    if (!name) {
+      res.status(400).json({ error: "name is required" });
+      return;
+    }
+
+    const restaurant = await prisma.restaurant.create({
+      data: {
+        adminId: req.admin!.id,
+        name,
+        phone: phone || null,
+        address: address || null,
+        description: description || null,
+        logoUrl: logoUrl || null,
+        colors: colors || {},
+        settings: settings || {},
+      },
+    });
+
+    res.status(201).json(restaurant);
+  } catch (error) {
+    console.error("Error creating restaurant:", error);
+    res.status(500).json({ error: "Failed to create restaurant" });
+  }
+});
+
+app.get("/api/admin/restaurant", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.admin!.restaurantId) {
+      res.status(404).json({ error: "No restaurant found" });
+      return;
+    }
+
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: req.admin!.restaurantId },
+      include: {
+        categories: { orderBy: { position: "asc" } },
+        menuItems: { orderBy: { position: "asc" } },
+      },
+    });
+
+    res.json(restaurant);
+  } catch (error) {
+    console.error("Error fetching restaurant:", error);
+    res.status(500).json({ error: "Failed to fetch restaurant" });
+  }
+});
+
+app.patch("/api/admin/restaurant", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.admin!.restaurantId) {
+      res.status(404).json({ error: "No restaurant found" });
+      return;
+    }
+
+    const { name, phone, address, description, logoUrl, colors, settings } = req.body;
+
+    const restaurant = await prisma.restaurant.update({
+      where: { id: req.admin!.restaurantId },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(phone !== undefined && { phone }),
+        ...(address !== undefined && { address }),
+        ...(description !== undefined && { description }),
+        ...(logoUrl !== undefined && { logoUrl }),
+        ...(colors !== undefined && { colors }),
+        ...(settings !== undefined && { settings }),
+      },
+    });
+
+    res.json(restaurant);
+  } catch (error) {
+    console.error("Error updating restaurant:", error);
+    res.status(500).json({ error: "Failed to update restaurant" });
+  }
+});
+
+app.get("/api/admin/menu/categories", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.admin!.restaurantId) {
+      res.status(404).json({ error: "No restaurant found" });
+      return;
+    }
+
+    const categories = await prisma.menuCategory.findMany({
+      where: { restaurantId: req.admin!.restaurantId },
+      orderBy: { position: "asc" },
+      include: { menuItems: { orderBy: { position: "asc" } } },
+    });
+
+    res.json(categories);
+  } catch (error) {
+    console.error("Error fetching categories:", error);
+    res.status(500).json({ error: "Failed to fetch categories" });
+  }
+});
+
+app.post("/api/admin/menu/categories", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.admin!.restaurantId) {
+      res.status(404).json({ error: "No restaurant found" });
+      return;
+    }
+
+    const { name, description, position, isActive } = req.body;
+
+    if (!name) {
+      res.status(400).json({ error: "name is required" });
+      return;
+    }
+
+    const category = await prisma.menuCategory.create({
+      data: {
+        restaurantId: req.admin!.restaurantId,
+        name,
+        description: description || null,
+        position: position || 0,
+        isActive: isActive !== false,
+      },
+    });
+
+    res.status(201).json(category);
+  } catch (error) {
+    console.error("Error creating category:", error);
+    res.status(500).json({ error: "Failed to create category" });
+  }
+});
+
+app.patch("/api/admin/menu/categories/:id", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.admin!.restaurantId) {
+      res.status(404).json({ error: "No restaurant found" });
+      return;
+    }
+
+    const { id } = req.params;
+    const { name, description, position, isActive } = req.body;
+
+    const result = await prisma.menuCategory.updateMany({
+      where: { id, restaurantId: req.admin!.restaurantId },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(description !== undefined && { description }),
+        ...(position !== undefined && { position }),
+        ...(isActive !== undefined && { isActive }),
+      },
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Category not found" });
+      return;
+    }
+
+    const category = await prisma.menuCategory.findUnique({ where: { id } });
+    res.json(category);
+  } catch (error) {
+    console.error("Error updating category:", error);
+    res.status(500).json({ error: "Failed to update category" });
+  }
+});
+
+app.delete("/api/admin/menu/categories/:id", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.admin!.restaurantId) {
+      res.status(404).json({ error: "No restaurant found" });
+      return;
+    }
+
+    const { id } = req.params;
+
+    const result = await prisma.menuCategory.deleteMany({
+      where: { id, restaurantId: req.admin!.restaurantId },
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Category not found" });
+      return;
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting category:", error);
+    res.status(500).json({ error: "Failed to delete category" });
+  }
+});
+
+app.get("/api/admin/menu/items", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.admin!.restaurantId) {
+      res.status(404).json({ error: "No restaurant found" });
+      return;
+    }
+
+    const items = await prisma.menuItem.findMany({
+      where: { restaurantId: req.admin!.restaurantId },
+      orderBy: { position: "asc" },
+      include: { category: true },
+    });
+
+    res.json(items);
+  } catch (error) {
+    console.error("Error fetching menu items:", error);
+    res.status(500).json({ error: "Failed to fetch menu items" });
+  }
+});
+
+app.post("/api/admin/menu/items", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.admin!.restaurantId) {
+      res.status(404).json({ error: "No restaurant found" });
+      return;
+    }
+
+    const { name, description, price, currency, categoryId, imageUrl, isAvailable, position } = req.body;
+
+    if (!name || price === undefined) {
+      res.status(400).json({ error: "name and price are required" });
+      return;
+    }
+
+    if (categoryId) {
+      const category = await prisma.menuCategory.findFirst({
+        where: { id: categoryId, restaurantId: req.admin!.restaurantId },
+      });
+      if (!category) {
+        res.status(400).json({ error: "Invalid category" });
+        return;
+      }
+    }
+
+    const item = await prisma.menuItem.create({
+      data: {
+        restaurantId: req.admin!.restaurantId,
+        name,
+        description: description || null,
+        price: Number(price),
+        currency: currency || "KES",
+        categoryId: categoryId || null,
+        imageUrl: imageUrl || null,
+        isAvailable: isAvailable !== false,
+        position: position || 0,
+      },
+    });
+
+    res.status(201).json(item);
+  } catch (error) {
+    console.error("Error creating menu item:", error);
+    res.status(500).json({ error: "Failed to create menu item" });
+  }
+});
+
+app.patch("/api/admin/menu/items/:id", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.admin!.restaurantId) {
+      res.status(404).json({ error: "No restaurant found" });
+      return;
+    }
+
+    const { id } = req.params;
+    const { name, description, price, currency, categoryId, imageUrl, isAvailable, position } = req.body;
+
+    if (categoryId) {
+      const category = await prisma.menuCategory.findFirst({
+        where: { id: categoryId, restaurantId: req.admin!.restaurantId },
+      });
+      if (!category) {
+        res.status(400).json({ error: "Invalid category" });
+        return;
+      }
+    }
+
+    const result = await prisma.menuItem.updateMany({
+      where: { id, restaurantId: req.admin!.restaurantId },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(description !== undefined && { description }),
+        ...(price !== undefined && { price: Number(price) }),
+        ...(currency !== undefined && { currency }),
+        ...(categoryId !== undefined && { categoryId }),
+        ...(imageUrl !== undefined && { imageUrl }),
+        ...(isAvailable !== undefined && { isAvailable }),
+        ...(position !== undefined && { position }),
+      },
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Menu item not found" });
+      return;
+    }
+
+    const item = await prisma.menuItem.findUnique({ where: { id } });
+    res.json(item);
+  } catch (error) {
+    console.error("Error updating menu item:", error);
+    res.status(500).json({ error: "Failed to update menu item" });
+  }
+});
+
+app.delete("/api/admin/menu/items/:id", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.admin!.restaurantId) {
+      res.status(404).json({ error: "No restaurant found" });
+      return;
+    }
+
+    const { id } = req.params;
+
+    const result = await prisma.menuItem.deleteMany({
+      where: { id, restaurantId: req.admin!.restaurantId },
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Menu item not found" });
+      return;
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting menu item:", error);
+    res.status(500).json({ error: "Failed to delete menu item" });
+  }
+});
+
+app.get("/api/admin/orders", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.admin!.restaurantId) {
+      res.status(404).json({ error: "No restaurant found" });
+      return;
+    }
+
+    const { status, limit, offset } = req.query;
+
+    const orders = await prisma.order.findMany({
+      where: {
+        restaurantId: req.admin!.restaurantId,
+        ...(status && { status: status as OrderStatus }),
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit ? Number(limit) : 50,
+      skip: offset ? Number(offset) : 0,
+    });
+
+    res.json(orders);
+  } catch (error) {
+    console.error("Error fetching orders:", error);
+    res.status(500).json({ error: "Failed to fetch orders" });
+  }
+});
+
+app.patch("/api/admin/orders/:id/status", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.admin!.restaurantId) {
+      res.status(404).json({ error: "No restaurant found" });
+      return;
+    }
+
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const validStatuses: OrderStatus[] = ["pending", "confirmed", "preparing", "ready", "delivered", "cancelled"];
+    if (!status || !validStatuses.includes(status)) {
+      res.status(400).json({ error: "Invalid status. Must be one of: " + validStatuses.join(", ") });
+      return;
+    }
+
+    const result = await prisma.order.updateMany({
+      where: { id, restaurantId: req.admin!.restaurantId },
+      data: { status },
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
+
+    const order = await prisma.order.findUnique({ where: { id } });
+    res.json(order);
+  } catch (error) {
+    console.error("Error updating order status:", error);
+    res.status(500).json({ error: "Failed to update order status" });
   }
 });
 
