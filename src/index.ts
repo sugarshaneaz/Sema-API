@@ -1533,6 +1533,15 @@ app.get("/api/admin/orders", requireAdminAuth as any, async (req: AuthenticatedR
   }
 });
 
+const orderTransitions: Record<OrderStatus, OrderStatus[]> = {
+  pending: ["confirmed", "cancelled"],
+  confirmed: ["preparing", "cancelled"],
+  preparing: ["ready", "cancelled"],
+  ready: ["delivered", "cancelled"],
+  delivered: [],
+  cancelled: [],
+};
+
 app.patch("/api/admin/orders/:id/status", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.admin!.restaurantId) {
@@ -1549,17 +1558,28 @@ app.patch("/api/admin/orders/:id/status", requireAdminAuth as any, async (req: A
       return;
     }
 
-    const result = await prisma.order.updateMany({
+    const existingOrder = await prisma.order.findFirst({
       where: { id, restaurantId: req.admin!.restaurantId },
-      data: { status },
     });
 
-    if (result.count === 0) {
+    if (!existingOrder) {
       res.status(404).json({ error: "Order not found" });
       return;
     }
 
-    const order = await prisma.order.findUnique({ where: { id } });
+    const allowedNext = orderTransitions[existingOrder.status];
+    if (!allowedNext.includes(status as OrderStatus)) {
+      res.status(400).json({ 
+        error: `Cannot transition from ${existingOrder.status} to ${status}. Allowed: ${allowedNext.join(", ") || "none"}` 
+      });
+      return;
+    }
+
+    const order = await prisma.order.update({
+      where: { id },
+      data: { status },
+    });
+
     res.json(order);
   } catch (error) {
     console.error("Error updating order status:", error);

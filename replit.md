@@ -78,6 +78,38 @@ A minimal Express TypeScript API server with WhatsApp webhook integration, multi
 - `needsHuman` (Boolean)
 - `escalationReason`, `messageHistory` (JSON)
 
+### admins
+- `id` (UUID, primary key)
+- `email` (String, unique)
+- `passwordHash`, `salt` (String) - SHA256 hashed password
+- `name` (String)
+- Relations: restaurant (1:1)
+
+### restaurants
+- `id` (UUID, primary key)
+- `adminId` (String, unique FK)
+- `name`, `phone`, `address`, `description`, `logoUrl`
+- `colors` (JSON) - Brand color palette
+- `settings` (JSON) - Restaurant settings
+- Relations: categories, menuItems, orders
+
+### menu_categories
+- `id`, `restaurantId`, `name`, `description`
+- `position` (Int) - Display order
+- `isActive` (Boolean)
+- Relations: menuItems
+
+### menu_items
+- `id`, `restaurantId`, `categoryId` (optional)
+- `name`, `description`, `price`, `currency`
+- `imageUrl`, `isAvailable`, `position`
+
+### orders
+- `id`, `restaurantId`
+- `status` (Enum: pending, confirmed, preparing, ready, delivered, cancelled)
+- `items` (JSON), `customerName`, `customerPhone`, `customerEmail`
+- `subtotal`, `total`, `notes`
+
 ## API Endpoints
 
 ### Health
@@ -119,6 +151,34 @@ A minimal Express TypeScript API server with WhatsApp webhook integration, multi
 - `GET /api/conversations` - List conversations
 - `GET /api/conversations/:id` - Get conversation details
 - `PUT /api/conversations/:id/resolve` - Resolve escalated conversation
+- `PUT /api/conversations/:id/escalate` - Manually escalate conversation
+
+### Admin Authentication
+- `POST /api/admin/register` - Create admin account (email, password, name) → returns JWT token
+- `POST /api/admin/login` - Login with email/password → returns JWT token
+- `POST /api/admin/logout` - Logout and invalidate token
+- `GET /api/admin/me` - Get current admin info (requires Bearer token)
+
+### Restaurant Management (requires Bearer token)
+- `POST /api/admin/restaurant` - Create restaurant for logged-in admin
+- `GET /api/admin/restaurant` - Get current admin's restaurant with menu
+- `PATCH /api/admin/restaurant` - Update restaurant settings (name, phone, address, colors, logo, etc.)
+
+### Menu Categories (requires Bearer token)
+- `GET /api/admin/menu/categories` - List all categories with items
+- `POST /api/admin/menu/categories` - Create category
+- `PATCH /api/admin/menu/categories/:id` - Update category
+- `DELETE /api/admin/menu/categories/:id` - Delete category
+
+### Menu Items (requires Bearer token)
+- `GET /api/admin/menu/items` - List all menu items
+- `POST /api/admin/menu/items` - Create menu item
+- `PATCH /api/admin/menu/items/:id` - Update menu item
+- `DELETE /api/admin/menu/items/:id` - Delete menu item
+
+### Orders (requires Bearer token)
+- `GET /api/admin/orders` - List orders (optional: ?status=pending&limit=50&offset=0)
+- `PATCH /api/admin/orders/:id/status` - Update order status
 
 ### WhatsApp Connection
 - `POST /api/whatsapp/connect` - Save/update WhatsApp connection
