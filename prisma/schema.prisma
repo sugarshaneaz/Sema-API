@@ -157,3 +157,102 @@ model Conversation {
   @@unique([connectionId, customerPhone])
   @@map("conversations")
 }
+
+model Admin {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  salt         String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  restaurant Restaurant?
+
+  @@map("admins")
+}
+
+model Restaurant {
+  id          String   @id @default(uuid())
+  adminId     String   @unique
+  name        String
+  phone       String?
+  address     String?
+  description String?
+  logoUrl     String?
+  colors      Json     @default("{}")
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  admin      Admin          @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  categories MenuCategory[]
+  menuItems  MenuItem[]
+  orders     Order[]
+
+  @@map("restaurants")
+}
+
+model MenuCategory {
+  id           String   @id @default(uuid())
+  restaurantId String
+  name         String
+  description  String?
+  position     Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  menuItems  MenuItem[]
+
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id           String   @id @default(uuid())
+  restaurantId String
+  categoryId   String?
+  name         String
+  description  String?
+  price        Float
+  currency     String   @default("KES")
+  imageUrl     String?
+  isAvailable  Boolean  @default(true)
+  position     Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  restaurant Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  category   MenuCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@map("menu_items")
+}
+
+enum OrderStatus {
+  pending
+  confirmed
+  preparing
+  ready
+  delivered
+  cancelled
+}
+
+model Order {
+  id            String      @id @default(uuid())
+  restaurantId  String
+  status        OrderStatus @default(pending)
+  items         Json        @default("[]")
+  customerName  String?
+  customerPhone String?
+  customerEmail String?
+  subtotal      Float       @default(0)
+  total         Float       @default(0)
+  notes         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@map("orders")
+}
