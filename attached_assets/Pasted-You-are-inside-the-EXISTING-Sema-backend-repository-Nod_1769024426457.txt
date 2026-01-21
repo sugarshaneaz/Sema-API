@@ -1,0 +1,234 @@
+You are inside the EXISTING Sema backend repository (Node.js 20 + TypeScript, Express.js, Prisma 7 with @prisma/adapter-pg, PostgreSQL on Replit/Neon). Implement Option B properly: replace the Restaurant-only domain with a generalized Business domain and generalized Catalog, including full database migrations and a data migration from existing Restaurant/Menu tables, while preserving backward compatibility for existing restaurant/menu endpoints so current mobile clients do not break.
+
+NON-NEGOTIABLE REQUIREMENTS
+- Do NOT create a new project. Modify this codebase in-place.
+- Do NOT remove or break any existing endpoints. Old endpoints must behave exactly as before.
+- Keep auth EXACTLY as-is:
+  - SHA256 password hashing
+  - In-memory Bearer token sessions with 24h TTL
+  - Token format stays the same as current (whatever code currently emits).
+- Use the existing error/response format and middleware patterns; do not redesign the whole app.
+- Add complete input validation using whatever validation approach already exists in this repo (inspect current code and follow it).
+- Add ownership enforcement everywhere: an authenticated admin can only access businesses they own.
+- Add tests (unit + integration) using whatever test runner is currently configured in package.json (inspect scripts; use it, do not invent a new test framework if one already exists).
+- Add docs and a migration runbook.
+
+PHASE 0 — CODEBASE DISCOVERY (MANDATORY FIRST STEP)
+1) Inspect and summarize (briefly) the current structure:
+   - src/ entrypoint, routing layout, middleware, auth/session implementation, controllers/services
+   - prisma/schema.prisma models
+   - package.json scripts (dev, build, test)
+2) Print a short plan listing EXACT files you will change/add before writing code.
+
+PHASE 1 — DATABASE MODELS (Prisma + migrations)
+Implement the following properly in Prisma schema (prisma/schema.prisma) with real relations and indexes. Use Prisma migrations (prisma migrate) — do not hack SQL without Prisma unless absolutely necessary (if you must, document it).
+
+A) Admin: add activeBusinessId (nullable)
+- Keep existing fields, including any restaurantId if present.
+- restaurantId remains for backward compatibility (do not remove yet).
+- Add relation from Admin.activeBusinessId -> Business.id.
+
+B) Business (NEW)
+Fields (minimum):
+- id String @id @default(uuid())
+- ownerAdminId String (FK to Admin)
+- type enum BusinessType: RESTAURANT | RETAIL | CLINIC | SALON | GOV | OTHER
+- name String (required)
+- phone String? 
+- address String?
+- description String?
+- logoUrl String?
+- colors Json?
+- settings Json?
+- createdAt DateTime @default(now())
+- updatedAt DateTime @updatedAt
+Relations:
+- ownerAdmin Admin @relation(...)
+- catalogCategories CatalogCategory[]
+- catalogItems CatalogItem[]
+Index ownerAdminId.
+
+C) CatalogCategory (NEW)
+- id uuid
+- businessId FK to Business
+- name required
+- description optional
+- position Int @default(0)
+- isActive Boolean @default(true)
+- createdAt/updatedAt
+Index businessId, order by position supported.
+
+D) CatalogItem (NEW)
+- id uuid
+- businessId FK to Business
+- categoryId nullable FK to CatalogCategory
+- name required
+- price Decimal? (or Float? — inspect how MenuItem.price is currently stored; follow existing approach)
+- currency String @default("KES") (match current defaults)
+- description String?
+- imageUrl String?
+- isAvailable Boolean @default(true)
+- position Int @default(0)
+- metadata Json?
+- createdAt/updatedAt
+Indexes: businessId, categoryId.
+
+E) Orders: keep existing table/model and endpoints working.
+- If Orders currently point to restaurantId, do NOT break it.
+- Prefer: add businessId nullable FK (safe migration), and populate it for restaurant businesses.
+- If that’s risky, create a mapping strategy (restaurantId -> businessId) without breaking old code, but document it.
+
+PHASE 2 — DATA MIGRATION (MANDATORY)
+You MUST migrate existing production data in a safe, repeatable way.
+
+Implement a dedicated migration script in repo (e.g. scripts/migrateRestaurantToBusiness.ts) that:
+1) For each existing Restaurant:
+   - create Business with type=RESTAURANT
+   - copy name/phone/address/description/logoUrl/colors/settings
+   - set ownerAdminId = restaurant.adminId
+2) Migrate MenuCategory -> CatalogCategory preserving:
+   - name, description, position, isActive
+   - map category IDs (store mapping in-memory during migration)
+3) Migrate MenuItem -> CatalogItem preserving:
+   - name, price, currency, description, imageUrl, isAvailable, position
+   - category relation via the mapping
+4) Orders:
+   - If you added businessId to Orders, set it based on restaurant->business mapping
+   - Otherwise ensure order queries can still be joined/filtered properly for restaurant business contexts
+5) Set Admin.activeBusinessId for admins that have a restaurant:
+   - activeBusinessId = created restaurant businessId
+   - Keep Admin.restaurantId populated (legacy) if it exists and was used before
+
+The migration script must be idempotent:
+- If run twice, it should not duplicate businesses/categories/items.
+- Use deterministic checks (e.g. store restaurantId inside Business.settings.legacyRestaurantId or add a dedicated legacyRestaurantId field — prefer a dedicated column if you can, otherwise JSON setting with a stable key).
+
+PHASE 3 — NEW ENDPOINTS (Express routes + controllers)
+All endpoints require Authorization: Bearer <token> (existing middleware), and must enforce ownership.
+
+1) Businesses
+- POST /api/admin/businesses
+  Body: { type, name, phone?, address?, description?, logoUrl?, colors?, settings? }
+  Response 201: business JSON
+  Behavior: allow multiple businesses per admin (proper). Do NOT limit to one.
+- GET /api/admin/businesses
+  Response 200: array of admin’s businesses
+- GET /api/admin/businesses/:id
+  Response 200: business + catalog categories + catalog items (and optionally recent orders if easy, but do not break anything)
+- PATCH /api/admin/businesses/:id
+  Response 200: updated business
+- POST /api/admin/businesses/:id/select
+  Sets admin.activeBusinessId = :id
+  Response 200: { activeBusinessId: "uuid" }
+
+Update GET /api/admin/me (non-breaking):
+- Keep returning { id, email, name, restaurantId }
+- Also return activeBusinessId
+
+2) Catalog
+- GET /api/admin/businesses/:id/catalog/categories
+- POST /api/admin/businesses/:id/catalog/categories
+- PATCH /api/admin/businesses/:id/catalog/categories/:categoryId
+- DELETE /api/admin/businesses/:id/catalog/categories/:categoryId
+
+- GET /api/admin/businesses/:id/catalog/items
+- POST /api/admin/businesses/:id/catalog/items
+- PATCH /api/admin/businesses/:id/catalog/items/:itemId
+- DELETE /api/admin/businesses/:id/catalog/items/:itemId
+
+Validation rules:
+- required: category.name, item.name
+- item.price may be nullable for GOV
+- default currency matches existing behavior
+- deleting a category: follow current menu delete behavior. If current behavior deletes category and leaves items uncategorized, mimic that. If it blocks deletion, mimic that.
+
+PHASE 4 — BACKWARD COMPATIBILITY LAYER (MUST NOT BREAK CURRENT CLIENTS)
+Existing endpoints MUST remain and MUST keep the old response shapes.
+
+A) Restaurant endpoints (legacy)
+- POST /api/admin/restaurant
+- GET /api/admin/restaurant
+- PATCH /api/admin/restaurant
+
+Implement as wrappers around Business:
+- POST /api/admin/restaurant:
+  - create a Business with type=RESTAURANT
+  - set admin.activeBusinessId to it
+  - set admin.restaurantId (legacy) to it (if field exists)
+  - return same shape as old restaurant create response
+- GET /api/admin/restaurant:
+  - resolve restaurant business for this admin:
+    - prefer admin.restaurantId
+    - fallback to activeBusinessId if it points to type=RESTAURANT
+    - fallback to first owned restaurant business
+  - return EXACT old response shape:
+    - include categories array with embedded menuItems (map CatalogCategory + CatalogItem)
+    - include menuItems array (all items)
+    - include orders array (recent orders) exactly as before
+- PATCH /api/admin/restaurant:
+  - update the restaurant business resolved as above
+  - accept same request fields as before (name/phone/address/description/logoUrl/colors/settings)
+  - store them on Business fields
+
+B) Menu endpoints (legacy) must continue:
+- /api/admin/menu/categories
+- /api/admin/menu/items
+Proxy them to catalog for the admin’s restaurant business, but keep old shapes and defaults.
+
+C) Orders endpoints (legacy) must continue:
+- GET /api/admin/orders (filters/pagination unchanged)
+- PATCH /api/admin/orders/:id/status (transitions unchanged)
+Ensure they still operate for restaurant business contexts. Do not alter status transition rules or error messages.
+
+PHASE 5 — TESTS (MANDATORY)
+Use the repo’s existing test setup (inspect package.json). Add tests that cover:
+
+1) New endpoints:
+- create business, list businesses, select business
+- ownership enforcement (admin A cannot access admin B business)
+- catalog CRUD under a business
+
+2) Backward compat:
+- POST /api/admin/restaurant still works
+- GET /api/admin/restaurant returns categories with menuItems, and menuItems list
+- /api/admin/menu/items and categories still work and affect the restaurant business catalog
+
+3) Migration:
+- Seed old schema entities (restaurant, menu categories/items, orders if possible)
+- Run migration script
+- Assert:
+  - businesses created
+  - catalog categories/items created and mapped
+  - admin.activeBusinessId set
+  - old endpoints still return expected data
+
+PHASE 6 — DOCS + RUNBOOK
+Add:
+- docs/API.md with:
+  - new Business + Catalog endpoint reference (requests/responses)
+  - examples for each business type showing metadata usage
+  - backward-compat notes
+- MIGRATION_RUNBOOK.md with:
+  - exact commands to run migrations and the data migration script on Replit/Neon
+  - rollback guidance
+  - verification checklist
+
+IMPLEMENTATION NOTES (IMPORTANT)
+- Keep build setup: tsc -> dist/index.cjs
+- Use tsx for dev (don’t break dev scripts)
+- Prisma 7 with adapter-pg: do not change datasource/provider setup unless required.
+- Use Prisma transactions where appropriate for create/update flows.
+- Preserve existing response field names for legacy endpoints.
+
+OUTPUT REQUIREMENTS
+1) After discovery, print the plan with file list.
+2) Implement step-by-step.
+3) Run and report tests.
+4) Ensure TypeScript builds (npm run build).
+5) Confirm old endpoints are intact.
+
+Start now by:
+- scanning routes/controllers
+- scanning prisma/schema.prisma
+- scanning how tokens/sessions are stored and validated
+- then proceed.
