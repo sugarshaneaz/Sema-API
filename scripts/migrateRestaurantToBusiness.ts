@@ -21,6 +21,11 @@ async function migrateRestaurantsToBusiness() {
   console.log(`Found ${restaurants.length} restaurants to migrate`);
 
   for (const restaurant of restaurants) {
+    if (!restaurant.admin) {
+      console.log(`Restaurant ${restaurant.id} has no admin, skipping...`);
+      continue;
+    }
+
     const existingBusiness = await prisma.business.findUnique({
       where: { legacyRestaurantId: restaurant.id },
     });
