@@ -159,17 +159,93 @@ model Conversation {
 }
 
 model Admin {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  salt         String
-  name         String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id               String   @id @default(uuid())
+  email            String   @unique
+  passwordHash     String
+  salt             String
+  name             String
+  activeBusinessId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  restaurant Restaurant?
+  restaurant     Restaurant?
+  businesses     Business[]     @relation("OwnerAdmin")
+  activeBusiness Business?      @relation("ActiveBusiness", fields: [activeBusinessId], references: [id], onDelete: SetNull)
 
   @@map("admins")
+}
+
+enum BusinessType {
+  RESTAURANT
+  RETAIL
+  CLINIC
+  SALON
+  GOV
+  OTHER
+}
+
+model Business {
+  id                  String       @id @default(uuid())
+  ownerAdminId        String
+  type                BusinessType
+  name                String
+  phone               String?
+  address             String?
+  description         String?
+  logoUrl             String?
+  colors              Json         @default("{}")
+  settings            Json         @default("{}")
+  legacyRestaurantId  String?      @unique
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  ownerAdmin        Admin             @relation("OwnerAdmin", fields: [ownerAdminId], references: [id], onDelete: Cascade)
+  adminsWithActive  Admin[]           @relation("ActiveBusiness")
+  catalogCategories CatalogCategory[]
+  catalogItems      CatalogItem[]
+
+  @@index([ownerAdminId])
+  @@map("businesses")
+}
+
+model CatalogCategory {
+  id          String   @id @default(uuid())
+  businessId  String
+  name        String
+  description String?
+  position    Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  catalogItems CatalogItem[]
+
+  @@index([businessId])
+  @@map("catalog_categories")
+}
+
+model CatalogItem {
+  id          String   @id @default(uuid())
+  businessId  String
+  categoryId  String?
+  name        String
+  price       Float?
+  currency    String   @default("KES")
+  description String?
+  imageUrl    String?
+  isAvailable Boolean  @default(true)
+  position    Int      @default(0)
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category CatalogCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([categoryId])
+  @@map("catalog_items")
 }
 
 model Restaurant {
@@ -241,6 +317,7 @@ enum OrderStatus {
 model Order {
   id            String      @id @default(uuid())
   restaurantId  String
+  businessId    String?
   status        OrderStatus @default(pending)
   items         Json        @default("[]")
   customerName  String?
@@ -254,5 +331,6 @@ model Order {
 
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
+  @@index([businessId])
   @@map("orders")
 }
