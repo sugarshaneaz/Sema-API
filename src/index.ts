@@ -1620,20 +1620,44 @@ app.post("/api/admin/restaurant", requireAdminAuth as any, async (req: Authentic
       return;
     }
 
-    const restaurant = await prisma.restaurant.create({
-      data: {
-        adminId: req.admin!.id,
-        name,
-        phone: phone || null,
-        address: address || null,
-        description: description || null,
-        logoUrl: logoUrl || null,
-        colors: colors || {},
-        settings: settings || {},
-      },
+    const result = await prisma.$transaction(async (tx) => {
+      const restaurant = await tx.restaurant.create({
+        data: {
+          adminId: req.admin!.id,
+          name,
+          phone: phone || null,
+          address: address || null,
+          description: description || null,
+          logoUrl: logoUrl || null,
+          colors: colors || {},
+          settings: settings || {},
+        },
+      });
+
+      const business = await tx.business.create({
+        data: {
+          ownerAdminId: req.admin!.id,
+          type: "RESTAURANT",
+          name,
+          phone: phone || null,
+          address: address || null,
+          description: description || null,
+          logoUrl: logoUrl || null,
+          colors: colors || {},
+          settings: settings || {},
+          legacyRestaurantId: restaurant.id,
+        },
+      });
+
+      await tx.admin.update({
+        where: { id: req.admin!.id },
+        data: { activeBusinessId: business.id },
+      });
+
+      return restaurant;
     });
 
-    res.status(201).json(restaurant);
+    res.status(201).json(result);
   } catch (error) {
     console.error("Error creating restaurant:", error);
     res.status(500).json({ error: "Failed to create restaurant" });
@@ -1671,20 +1695,31 @@ app.patch("/api/admin/restaurant", requireAdminAuth as any, async (req: Authenti
 
     const { name, phone, address, description, logoUrl, colors, settings } = req.body;
 
-    const restaurant = await prisma.restaurant.update({
-      where: { id: req.admin!.restaurantId },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(phone !== undefined && { phone }),
-        ...(address !== undefined && { address }),
-        ...(description !== undefined && { description }),
-        ...(logoUrl !== undefined && { logoUrl }),
-        ...(colors !== undefined && { colors }),
-        ...(settings !== undefined && { settings }),
-      },
+    const updateData = {
+      ...(name !== undefined && { name }),
+      ...(phone !== undefined && { phone }),
+      ...(address !== undefined && { address }),
+      ...(description !== undefined && { description }),
+      ...(logoUrl !== undefined && { logoUrl }),
+      ...(colors !== undefined && { colors }),
+      ...(settings !== undefined && { settings }),
+    };
+
+    const result = await prisma.$transaction(async (tx) => {
+      const restaurant = await tx.restaurant.update({
+        where: { id: req.admin!.restaurantId },
+        data: updateData,
+      });
+
+      await tx.business.updateMany({
+        where: { legacyRestaurantId: req.admin!.restaurantId },
+        data: updateData,
+      });
+
+      return restaurant;
     });
 
-    res.json(restaurant);
+    res.json(result);
   } catch (error) {
     console.error("Error updating restaurant:", error);
     res.status(500).json({ error: "Failed to update restaurant" });
