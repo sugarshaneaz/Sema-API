@@ -997,6 +997,7 @@ interface AuthenticatedRequest extends Request {
     email: string;
     name: string;
     restaurantId?: string;
+    activeBusinessId?: string;
   };
 }
 
@@ -1037,6 +1038,7 @@ async function requireAdminAuth(req: AuthenticatedRequest, res: Response, next: 
     email: admin.email,
     name: admin.name,
     restaurantId: admin.restaurant?.id,
+    activeBusinessId: admin.activeBusinessId || undefined,
   };
 
   next();
@@ -1158,6 +1160,8 @@ app.get("/api/admin/me", requireAdminAuth as any, async (req: AuthenticatedReque
       id: admin.id,
       email: admin.email,
       name: admin.name,
+      restaurantId: admin.restaurant?.id || null,
+      activeBusinessId: admin.activeBusinessId || null,
       restaurant: admin.restaurant ? {
         id: admin.restaurant.id,
         name: admin.restaurant.name,
@@ -1173,6 +1177,432 @@ app.get("/api/admin/me", requireAdminAuth as any, async (req: AuthenticatedReque
   } catch (error) {
     console.error("Error fetching admin:", error);
     res.status(500).json({ error: "Failed to fetch admin info" });
+  }
+});
+
+app.post("/api/admin/businesses", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { type, name, phone, address, description, logoUrl, colors, settings } = req.body;
+
+    if (!name) {
+      res.status(400).json({ error: "name is required" });
+      return;
+    }
+
+    const validTypes = ["RESTAURANT", "RETAIL", "CLINIC", "SALON", "GOV", "OTHER"];
+    if (!type || !validTypes.includes(type)) {
+      res.status(400).json({ error: "type is required. Must be one of: " + validTypes.join(", ") });
+      return;
+    }
+
+    const business = await prisma.business.create({
+      data: {
+        ownerAdminId: req.admin!.id,
+        type,
+        name,
+        phone: phone || null,
+        address: address || null,
+        description: description || null,
+        logoUrl: logoUrl || null,
+        colors: colors || {},
+        settings: settings || {},
+      },
+    });
+
+    res.status(201).json(business);
+  } catch (error) {
+    console.error("Error creating business:", error);
+    res.status(500).json({ error: "Failed to create business" });
+  }
+});
+
+app.get("/api/admin/businesses", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const businesses = await prisma.business.findMany({
+      where: { ownerAdminId: req.admin!.id },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json(businesses);
+  } catch (error) {
+    console.error("Error fetching businesses:", error);
+    res.status(500).json({ error: "Failed to fetch businesses" });
+  }
+});
+
+app.get("/api/admin/businesses/:id", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const business = await prisma.business.findFirst({
+      where: { id, ownerAdminId: req.admin!.id },
+      include: {
+        catalogCategories: {
+          orderBy: { position: "asc" },
+          include: { catalogItems: { orderBy: { position: "asc" } } },
+        },
+        catalogItems: { orderBy: { position: "asc" } },
+      },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    res.json(business);
+  } catch (error) {
+    console.error("Error fetching business:", error);
+    res.status(500).json({ error: "Failed to fetch business" });
+  }
+});
+
+app.patch("/api/admin/businesses/:id", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { type, name, phone, address, description, logoUrl, colors, settings } = req.body;
+
+    const validTypes = ["RESTAURANT", "RETAIL", "CLINIC", "SALON", "GOV", "OTHER"];
+    if (type && !validTypes.includes(type)) {
+      res.status(400).json({ error: "Invalid type. Must be one of: " + validTypes.join(", ") });
+      return;
+    }
+
+    const result = await prisma.business.updateMany({
+      where: { id, ownerAdminId: req.admin!.id },
+      data: {
+        ...(type !== undefined && { type }),
+        ...(name !== undefined && { name }),
+        ...(phone !== undefined && { phone }),
+        ...(address !== undefined && { address }),
+        ...(description !== undefined && { description }),
+        ...(logoUrl !== undefined && { logoUrl }),
+        ...(colors !== undefined && { colors }),
+        ...(settings !== undefined && { settings }),
+      },
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const business = await prisma.business.findUnique({ where: { id } });
+    res.json(business);
+  } catch (error) {
+    console.error("Error updating business:", error);
+    res.status(500).json({ error: "Failed to update business" });
+  }
+});
+
+app.post("/api/admin/businesses/:id/select", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const business = await prisma.business.findFirst({
+      where: { id, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    await prisma.admin.update({
+      where: { id: req.admin!.id },
+      data: { activeBusinessId: id },
+    });
+
+    res.json({ activeBusinessId: id });
+  } catch (error) {
+    console.error("Error selecting business:", error);
+    res.status(500).json({ error: "Failed to select business" });
+  }
+});
+
+app.get("/api/admin/businesses/:id/catalog/categories", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const business = await prisma.business.findFirst({
+      where: { id, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const categories = await prisma.catalogCategory.findMany({
+      where: { businessId: id },
+      orderBy: { position: "asc" },
+      include: { catalogItems: { orderBy: { position: "asc" } } },
+    });
+
+    res.json(categories);
+  } catch (error) {
+    console.error("Error fetching catalog categories:", error);
+    res.status(500).json({ error: "Failed to fetch catalog categories" });
+  }
+});
+
+app.post("/api/admin/businesses/:id/catalog/categories", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, description, position, isActive } = req.body;
+
+    if (!name) {
+      res.status(400).json({ error: "name is required" });
+      return;
+    }
+
+    const business = await prisma.business.findFirst({
+      where: { id, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const category = await prisma.catalogCategory.create({
+      data: {
+        businessId: id,
+        name,
+        description: description || null,
+        position: position || 0,
+        isActive: isActive !== false,
+      },
+    });
+
+    res.status(201).json(category);
+  } catch (error) {
+    console.error("Error creating catalog category:", error);
+    res.status(500).json({ error: "Failed to create catalog category" });
+  }
+});
+
+app.patch("/api/admin/businesses/:id/catalog/categories/:categoryId", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id, categoryId } = req.params;
+    const { name, description, position, isActive } = req.body;
+
+    const business = await prisma.business.findFirst({
+      where: { id, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const result = await prisma.catalogCategory.updateMany({
+      where: { id: categoryId, businessId: id },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(description !== undefined && { description }),
+        ...(position !== undefined && { position }),
+        ...(isActive !== undefined && { isActive }),
+      },
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Category not found" });
+      return;
+    }
+
+    const category = await prisma.catalogCategory.findUnique({ where: { id: categoryId } });
+    res.json(category);
+  } catch (error) {
+    console.error("Error updating catalog category:", error);
+    res.status(500).json({ error: "Failed to update catalog category" });
+  }
+});
+
+app.delete("/api/admin/businesses/:id/catalog/categories/:categoryId", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id, categoryId } = req.params;
+
+    const business = await prisma.business.findFirst({
+      where: { id, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const result = await prisma.catalogCategory.deleteMany({
+      where: { id: categoryId, businessId: id },
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Category not found" });
+      return;
+    }
+
+    res.json({ message: "Category deleted" });
+  } catch (error) {
+    console.error("Error deleting catalog category:", error);
+    res.status(500).json({ error: "Failed to delete catalog category" });
+  }
+});
+
+app.get("/api/admin/businesses/:id/catalog/items", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const business = await prisma.business.findFirst({
+      where: { id, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const items = await prisma.catalogItem.findMany({
+      where: { businessId: id },
+      orderBy: { position: "asc" },
+      include: { category: true },
+    });
+
+    res.json(items);
+  } catch (error) {
+    console.error("Error fetching catalog items:", error);
+    res.status(500).json({ error: "Failed to fetch catalog items" });
+  }
+});
+
+app.post("/api/admin/businesses/:id/catalog/items", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, price, currency, description, categoryId, imageUrl, isAvailable, position, metadata } = req.body;
+
+    if (!name) {
+      res.status(400).json({ error: "name is required" });
+      return;
+    }
+
+    const business = await prisma.business.findFirst({
+      where: { id, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    if (categoryId) {
+      const category = await prisma.catalogCategory.findFirst({
+        where: { id: categoryId, businessId: id },
+      });
+      if (!category) {
+        res.status(400).json({ error: "Invalid category" });
+        return;
+      }
+    }
+
+    const item = await prisma.catalogItem.create({
+      data: {
+        businessId: id,
+        name,
+        price: price !== undefined ? Number(price) : null,
+        currency: currency || "KES",
+        description: description || null,
+        categoryId: categoryId || null,
+        imageUrl: imageUrl || null,
+        isAvailable: isAvailable !== false,
+        position: position || 0,
+        metadata: metadata || {},
+      },
+    });
+
+    res.status(201).json(item);
+  } catch (error) {
+    console.error("Error creating catalog item:", error);
+    res.status(500).json({ error: "Failed to create catalog item" });
+  }
+});
+
+app.patch("/api/admin/businesses/:id/catalog/items/:itemId", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id, itemId } = req.params;
+    const { name, price, currency, description, categoryId, imageUrl, isAvailable, position, metadata } = req.body;
+
+    const business = await prisma.business.findFirst({
+      where: { id, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    if (categoryId) {
+      const category = await prisma.catalogCategory.findFirst({
+        where: { id: categoryId, businessId: id },
+      });
+      if (!category) {
+        res.status(400).json({ error: "Invalid category" });
+        return;
+      }
+    }
+
+    const result = await prisma.catalogItem.updateMany({
+      where: { id: itemId, businessId: id },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(price !== undefined && { price: price !== null ? Number(price) : null }),
+        ...(currency !== undefined && { currency }),
+        ...(description !== undefined && { description }),
+        ...(categoryId !== undefined && { categoryId }),
+        ...(imageUrl !== undefined && { imageUrl }),
+        ...(isAvailable !== undefined && { isAvailable }),
+        ...(position !== undefined && { position }),
+        ...(metadata !== undefined && { metadata }),
+      },
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Item not found" });
+      return;
+    }
+
+    const item = await prisma.catalogItem.findUnique({ where: { id: itemId } });
+    res.json(item);
+  } catch (error) {
+    console.error("Error updating catalog item:", error);
+    res.status(500).json({ error: "Failed to update catalog item" });
+  }
+});
+
+app.delete("/api/admin/businesses/:id/catalog/items/:itemId", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id, itemId } = req.params;
+
+    const business = await prisma.business.findFirst({
+      where: { id, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const result = await prisma.catalogItem.deleteMany({
+      where: { id: itemId, businessId: id },
+    });
+
+    if (result.count === 0) {
+      res.status(404).json({ error: "Item not found" });
+      return;
+    }
+
+    res.json({ message: "Item deleted" });
+  } catch (error) {
+    console.error("Error deleting catalog item:", error);
+    res.status(500).json({ error: "Failed to delete catalog item" });
   }
 });
 
