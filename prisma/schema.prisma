@@ -185,24 +185,32 @@ enum BusinessType {
 }
 
 model Business {
-  id                  String       @id @default(uuid())
-  ownerAdminId        String
-  type                BusinessType
-  name                String
-  phone               String?
-  address             String?
-  description         String?
-  logoUrl             String?
-  colors              Json         @default("{}")
-  settings            Json         @default("{}")
-  legacyRestaurantId  String?      @unique
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  id                     String       @id @default(uuid())
+  ownerAdminId           String
+  type                   BusinessType
+  name                   String
+  phone                  String?
+  address                String?
+  description            String?
+  logoUrl                String?
+  colors                 Json         @default("{}")
+  settings               Json         @default("{}")
+  legacyRestaurantId     String?      @unique
+  uiLanguage             String       @default("en")
+  incomingTranslateTo    String       @default("en")
+  outgoingTranslateTo    String       @default("en")
+  autoTranslateIncoming  Boolean      @default(true)
+  autoTranslateOutgoing  Boolean      @default(false)
+  plan                   String       @default("free")
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
 
-  ownerAdmin        Admin             @relation("OwnerAdmin", fields: [ownerAdminId], references: [id], onDelete: Cascade)
-  adminsWithActive  Admin[]           @relation("ActiveBusiness")
-  catalogCategories CatalogCategory[]
-  catalogItems      CatalogItem[]
+  ownerAdmin          Admin                   @relation("OwnerAdmin", fields: [ownerAdminId], references: [id], onDelete: Cascade)
+  adminsWithActive    Admin[]                 @relation("ActiveBusiness")
+  catalogCategories   CatalogCategory[]
+  catalogItems        CatalogItem[]
+  messages            Message[]
+  translationUsage    TranslationUsageDaily[]
 
   @@index([ownerAdminId])
   @@map("businesses")
@@ -333,4 +341,62 @@ model Order {
 
   @@index([businessId])
   @@map("orders")
+}
+
+enum TranslationStatus {
+  none
+  done
+  failed
+}
+
+model Message {
+  id                String            @id @default(uuid())
+  businessId        String
+  conversationId    String?
+  direction         String            @default("inbound")
+  senderPhone       String?
+  recipientPhone    String?
+  textOriginal      String
+  langOriginal      String?
+  textTranslated    String?
+  langTranslated    String?
+  translationStatus TranslationStatus @default(none)
+  translationError  String?
+  metadata          Json              @default("{}")
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([conversationId])
+  @@map("messages")
+}
+
+model TranslationCache {
+  id             String    @id @default(uuid())
+  keyHash        String    @unique
+  fromLang       String
+  toLang         String
+  textOriginal   String
+  textTranslated String
+  hitCount       Int       @default(0)
+  lastHitAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@map("translation_cache")
+}
+
+model TranslationUsageDaily {
+  id         String   @id @default(uuid())
+  businessId String
+  day        DateTime
+  count      Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, day])
+  @@index([businessId])
+  @@map("translation_usage_daily")
 }

@@ -1,0 +1,129 @@
+You are working in my SEMA BACKEND repository (Node.js 20 + TypeScript + Express + Prisma 7 + PostgreSQL).
+
+GOAL
+Add multi-language support for East Africa + Ethiopia by implementing:
+- Language detection
+- Translation
+- Store original + translated versions (so UI can toggle)
+- Translation cache (avoid repeated cost)
+- Daily translation quotas per business plan (free/pro)
+- Business language preferences (incoming/outgoing + UI language preference stored on business)
+
+CRITICAL RULES
+- ALL translation/detection must be in backend.
+- Store BOTH original text and translated text.
+- Do NOT break existing auth/sessions or existing message/order endpoints; extend carefully.
+
+LANGUAGES
+UI languages Day 1: en, sw, am, so, fr
+Translation supported Day 1: en, sw, am, so, fr, ar, om, ti, rw, lg
+Use ISO-like short codes. Unknown => "und".
+
+ENV VARS
+- OPENAI_API_KEY (required)
+- AI_TRANSLATION_MODEL (default: gpt-4o-mini if available)
+- TRANSLATION_FREE_DAILY_LIMIT (default: 200)
+- TRANSLATION_PRO_DAILY_LIMIT (default: 5000)
+
+DATABASE (Prisma) - implement migrations
+1) Extend Business model (or equivalent) with:
+- uiLanguage: String @default("en")
+- incomingTranslateTo: String @default("en")
+- outgoingTranslateTo: String @default("en")
+- autoTranslateIncoming: Boolean @default(true)
+- autoTranslateOutgoing: Boolean @default(false)
+- plan: String @default("free") // free | pro (or map to existing plan/billing)
+
+2) Extend Message model (or ChatMessage) with:
+- textOriginal: String
+- langOriginal: String?              // detected
+- textTranslated: String?
+- langTranslated: String?
+- translationStatus: String @default("none") // none|done|failed
+- translationError: String?
+
+3) Add TranslationCache model:
+- id
+- keyHash: String @unique
+- fromLang: String
+- toLang: String
+- textOriginal: String
+- textTranslated: String
+- createdAt
+- hitCount: Int @default(0)
+- lastHitAt: DateTime?
+
+4) Add TranslationUsageDaily model:
+- id
+- businessId
+- day: DateTime                      // normalized date (UTC midnight)
+- count: Int @default(0)
+- updatedAt
+Unique constraint on (businessId, day)
+
+RUN MIGRATION + PRISMA GENERATE.
+
+OPENAI INTEGRATION
+- Use official OpenAI Node SDK.
+- Create services/i18n.ts with:
+  - detectLanguage(text): Promise<string>
+  - translate(text, from, to, mode): Promise<string>
+- Enforce strict outputs. Detection should return ONLY a short language code.
+- Translation must preserve numbers, prices, names, SKUs, phone numbers, and formatting.
+
+CACHE
+- Before calling OpenAI translate:
+  - compute sha256(text + from + to + mode + RULES_VERSION)
+  - check TranslationCache.keyHash
+  - if exists: return cached=true and increment hitCount/lastHitAt
+- Cached translations do NOT count toward daily quota.
+
+QUOTA
+- On non-cached translation calls:
+  - increment TranslationUsageDaily for business for today (UTC date)
+  - enforce plan limit:
+      free => TRANSLATION_FREE_DAILY_LIMIT
+      pro  => TRANSLATION_PRO_DAILY_LIMIT
+  - if exceeded: return 429 with:
+    { "error": "TRANSLATION_LIMIT_REACHED", "limit": X, "plan": "free" }
+
+API ROUTES
+Add under /v1/i18n (protected by auth unless you already have public endpoints; default to protected):
+1) POST /v1/i18n/detect
+Body: { text: string }
+Return: { lang: string }
+
+2) POST /v1/i18n/translate
+Body: { text: string, to: string, from?: string, mode?: "plain"|"rich" }
+Return: { from: string, to: string, translatedText: string, cached: boolean }
+
+BUSINESS SETTINGS ROUTES
+Add:
+- GET /v1/business/:id/language-settings
+- PUT /v1/business/:id/language-settings
+Payload includes uiLanguage, incomingTranslateTo, outgoingTranslateTo, autoTranslateIncoming, autoTranslateOutgoing
+
+MESSAGING INTEGRATION
+When creating a message:
+- Save textOriginal
+- Detect langOriginal
+- If receiver has autoTranslateIncoming=true AND langOriginal != receiver.incomingTranslateTo:
+  - translate into receiver.incomingTranslateTo
+  - save textTranslated/langTranslated
+Return message payload including both original + translated fields.
+
+Also ensure GET messages returns both fields unchanged (frontend decides what to display).
+
+VALIDATION + SAFETY
+- Limit text length (max 5000 chars); reject with 413.
+- Don’t log full message text. Log length, langs, cache hit/miss.
+- Never log OPENAI_API_KEY.
+
+DOCS
+Update README with:
+- env vars
+- endpoints
+- data flow (original vs translated)
+- example request/response
+
+Now implement fully with clean TypeScript types, Prisma queries, and Express routes. Adapt model names to my existing schema without breaking existing behavior.
