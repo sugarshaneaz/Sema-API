@@ -1,10 +1,20 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import { createHash, randomBytes } from "crypto";
-import { OrderStatus } from "@prisma/client";
+import { OrderStatus, TranslationStatus } from "@prisma/client";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { loadBusinessContext, checkSafetyTriggers, generateAIResponse, type ConversationMessage } from "./promptBuilder";
+import {
+  detectLanguage,
+  translate,
+  translateMessage,
+  isQuotaError,
+  getSupportedUILanguages,
+  getSupportedTranslationLanguages,
+  isValidUILanguage,
+  isValidTranslationLanguage,
+} from "./services/i18n";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -2049,6 +2059,348 @@ app.patch("/api/admin/orders/:id/status", requireAdminAuth as any, async (req: A
   } catch (error) {
     console.error("Error updating order status:", error);
     res.status(500).json({ error: "Failed to update order status" });
+  }
+});
+
+const MAX_I18N_TEXT_LENGTH = 5000;
+
+app.post("/v1/i18n/detect", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { text } = req.body;
+
+    if (!text || typeof text !== "string") {
+      res.status(400).json({ error: "text is required" });
+      return;
+    }
+
+    if (text.length > MAX_I18N_TEXT_LENGTH) {
+      res.status(413).json({ error: `Text exceeds maximum length of ${MAX_I18N_TEXT_LENGTH} characters` });
+      return;
+    }
+
+    const result = await detectLanguage(text, prisma);
+    res.json(result);
+  } catch (error) {
+    console.error("Language detection error:", error instanceof Error ? error.message : "Unknown");
+    res.status(500).json({ error: "Language detection failed" });
+  }
+});
+
+app.post("/v1/i18n/translate", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { text, to, from, mode } = req.body;
+
+    if (!text || typeof text !== "string") {
+      res.status(400).json({ error: "text is required" });
+      return;
+    }
+
+    if (!to || typeof to !== "string") {
+      res.status(400).json({ error: "to is required" });
+      return;
+    }
+
+    if (text.length > MAX_I18N_TEXT_LENGTH) {
+      res.status(413).json({ error: `Text exceeds maximum length of ${MAX_I18N_TEXT_LENGTH} characters` });
+      return;
+    }
+
+    if (!isValidTranslationLanguage(to)) {
+      res.status(400).json({ 
+        error: `Unsupported target language: ${to}. Supported: ${getSupportedTranslationLanguages().join(", ")}` 
+      });
+      return;
+    }
+
+    const businessId = req.admin!.activeBusinessId;
+    if (!businessId) {
+      res.status(400).json({ error: "No active business. Create or select a business first." });
+      return;
+    }
+
+    const result = await translate(text, to, prisma, businessId, {
+      from: from || undefined,
+      mode: mode === "rich" ? "rich" : "plain",
+    });
+
+    if (isQuotaError(result)) {
+      res.status(429).json(result);
+      return;
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error("Translation error:", error instanceof Error ? error.message : "Unknown");
+    res.status(500).json({ error: "Translation failed" });
+  }
+});
+
+app.get("/v1/i18n/languages", (_req: Request, res: Response) => {
+  res.json({
+    uiLanguages: getSupportedUILanguages(),
+    translationLanguages: getSupportedTranslationLanguages(),
+  });
+});
+
+app.get("/v1/business/:id/language-settings", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const business = await prisma.business.findFirst({
+      where: {
+        id,
+        ownerAdminId: req.admin!.id,
+      },
+      select: {
+        id: true,
+        uiLanguage: true,
+        incomingTranslateTo: true,
+        outgoingTranslateTo: true,
+        autoTranslateIncoming: true,
+        autoTranslateOutgoing: true,
+        plan: true,
+      },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    res.json(business);
+  } catch (error) {
+    console.error("Error getting language settings:", error);
+    res.status(500).json({ error: "Failed to get language settings" });
+  }
+});
+
+app.put("/v1/business/:id/language-settings", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      uiLanguage,
+      incomingTranslateTo,
+      outgoingTranslateTo,
+      autoTranslateIncoming,
+      autoTranslateOutgoing,
+    } = req.body;
+
+    const existing = await prisma.business.findFirst({
+      where: {
+        id,
+        ownerAdminId: req.admin!.id,
+      },
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const updateData: any = {};
+
+    if (uiLanguage !== undefined) {
+      if (!isValidUILanguage(uiLanguage)) {
+        res.status(400).json({ 
+          error: `Invalid uiLanguage. Supported: ${getSupportedUILanguages().join(", ")}` 
+        });
+        return;
+      }
+      updateData.uiLanguage = uiLanguage;
+    }
+
+    if (incomingTranslateTo !== undefined) {
+      if (!isValidTranslationLanguage(incomingTranslateTo)) {
+        res.status(400).json({ 
+          error: `Invalid incomingTranslateTo. Supported: ${getSupportedTranslationLanguages().join(", ")}` 
+        });
+        return;
+      }
+      updateData.incomingTranslateTo = incomingTranslateTo;
+    }
+
+    if (outgoingTranslateTo !== undefined) {
+      if (!isValidTranslationLanguage(outgoingTranslateTo)) {
+        res.status(400).json({ 
+          error: `Invalid outgoingTranslateTo. Supported: ${getSupportedTranslationLanguages().join(", ")}` 
+        });
+        return;
+      }
+      updateData.outgoingTranslateTo = outgoingTranslateTo;
+    }
+
+    if (typeof autoTranslateIncoming === "boolean") {
+      updateData.autoTranslateIncoming = autoTranslateIncoming;
+    }
+
+    if (typeof autoTranslateOutgoing === "boolean") {
+      updateData.autoTranslateOutgoing = autoTranslateOutgoing;
+    }
+
+    const updated = await prisma.business.update({
+      where: { id },
+      data: updateData,
+      select: {
+        id: true,
+        uiLanguage: true,
+        incomingTranslateTo: true,
+        outgoingTranslateTo: true,
+        autoTranslateIncoming: true,
+        autoTranslateOutgoing: true,
+        plan: true,
+      },
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating language settings:", error);
+    res.status(500).json({ error: "Failed to update language settings" });
+  }
+});
+
+app.post("/v1/business/:id/messages", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id: businessId } = req.params;
+    const {
+      text,
+      direction = "inbound",
+      senderPhone,
+      recipientPhone,
+      conversationId,
+      metadata,
+    } = req.body;
+
+    if (!text || typeof text !== "string") {
+      res.status(400).json({ error: "text is required" });
+      return;
+    }
+
+    if (text.length > MAX_I18N_TEXT_LENGTH) {
+      res.status(413).json({ error: `Text exceeds maximum length of ${MAX_I18N_TEXT_LENGTH} characters` });
+      return;
+    }
+
+    const business = await prisma.business.findFirst({
+      where: {
+        id: businessId,
+        ownerAdminId: req.admin!.id,
+      },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const translationResult = await translateMessage(
+      text,
+      businessId,
+      prisma,
+      direction === "outgoing" ? "outgoing" : "incoming"
+    );
+
+    const message = await prisma.message.create({
+      data: {
+        businessId,
+        conversationId: conversationId || null,
+        direction,
+        senderPhone: senderPhone || null,
+        recipientPhone: recipientPhone || null,
+        textOriginal: translationResult.textOriginal,
+        langOriginal: translationResult.langOriginal,
+        textTranslated: translationResult.textTranslated,
+        langTranslated: translationResult.langTranslated,
+        translationStatus: translationResult.translationStatus as TranslationStatus,
+        translationError: translationResult.translationError,
+        metadata: metadata || {},
+      },
+    });
+
+    res.status(201).json(message);
+  } catch (error) {
+    console.error("Error creating message:", error);
+    res.status(500).json({ error: "Failed to create message" });
+  }
+});
+
+app.get("/v1/business/:id/messages", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id: businessId } = req.params;
+    const { conversationId, limit = "50", offset = "0" } = req.query;
+
+    const business = await prisma.business.findFirst({
+      where: {
+        id: businessId,
+        ownerAdminId: req.admin!.id,
+      },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const where: any = { businessId };
+    if (conversationId) {
+      where.conversationId = conversationId;
+    }
+
+    const messages = await prisma.message.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: Math.min(parseInt(limit as string, 10), 100),
+      skip: parseInt(offset as string, 10),
+    });
+
+    res.json(messages);
+  } catch (error) {
+    console.error("Error listing messages:", error);
+    res.status(500).json({ error: "Failed to list messages" });
+  }
+});
+
+app.get("/v1/business/:id/translation-usage", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id: businessId } = req.params;
+
+    const business = await prisma.business.findFirst({
+      where: {
+        id: businessId,
+        ownerAdminId: req.admin!.id,
+      },
+      select: { id: true, plan: true },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const today = new Date();
+    const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+
+    const usage = await prisma.translationUsageDaily.findUnique({
+      where: {
+        businessId_day: { businessId, day: utcToday },
+      },
+    });
+
+    const plan = business.plan || "free";
+    const limit = plan === "pro" 
+      ? parseInt(process.env.TRANSLATION_PRO_DAILY_LIMIT || "5000", 10)
+      : parseInt(process.env.TRANSLATION_FREE_DAILY_LIMIT || "200", 10);
+
+    res.json({
+      businessId,
+      plan,
+      today: utcToday.toISOString().split("T")[0],
+      used: usage?.count || 0,
+      limit,
+      remaining: Math.max(0, limit - (usage?.count || 0)),
+    });
+  } catch (error) {
+    console.error("Error getting translation usage:", error);
+    res.status(500).json({ error: "Failed to get translation usage" });
   }
 });
 
