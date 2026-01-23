@@ -38,7 +38,10 @@ A minimal Express TypeScript API server with WhatsApp webhook integration, multi
 - `name`, `phone`, `address`, `description`, `logoUrl`
 - `colors` (JSON), `settings` (JSON)
 - `legacyRestaurantId` (String, unique, nullable) - For migration tracking
-- Relations: catalogCategories, catalogItems
+- `uiLanguage`, `incomingTranslateTo`, `outgoingTranslateTo` (String, default "en")
+- `autoTranslateIncoming` (Boolean, default true), `autoTranslateOutgoing` (Boolean, default false)
+- `plan` (String, default "free") - Controls translation quotas
+- Relations: catalogCategories, catalogItems, messages, translationUsage
 
 ### catalog_categories
 - `id` (UUID, primary key)
@@ -81,6 +84,21 @@ A minimal Express TypeScript API server with WhatsApp webhook integration, multi
 - `status` (Enum: pending, confirmed, preparing, ready, delivered, cancelled)
 - `items` (JSON), `customerName`, `customerPhone`, `customerEmail`, `subtotal`, `total`, `notes`
 
+### i18n Models (Multi-Language Support)
+
+### messages
+- `id`, `businessId`, `conversationId`, `direction`, `senderPhone`, `recipientPhone`
+- `textOriginal`, `langOriginal`, `textTranslated`, `langTranslated`
+- `translationStatus` (Enum: none, done, failed), `translationError`
+
+### translation_cache
+- `id`, `keyHash` (unique), `fromLang`, `toLang`
+- `textOriginal`, `textTranslated`, `hitCount`, `lastHitAt`
+
+### translation_usage_daily
+- `id`, `businessId`, `day`, `count`
+- Unique constraint: (businessId, day)
+
 ### WhatsApp Domain Models
 - whatsapp_connections, business_profiles, niches, niche_templates
 - knowledge_sources, faq_items, products_services, policies, conversations
@@ -114,6 +132,16 @@ A minimal Express TypeScript API server with WhatsApp webhook integration, multi
 - `POST /api/admin/businesses/:id/catalog/items` - Create item
 - `PATCH /api/admin/businesses/:id/catalog/items/:itemId` - Update
 - `DELETE /api/admin/businesses/:id/catalog/items/:itemId` - Delete
+
+### i18n / Translation (NEW - requires Bearer token)
+- `GET /v1/i18n/languages` - List supported UI and translation languages
+- `POST /v1/i18n/detect` - Detect language of text
+- `POST /v1/i18n/translate` - Translate text (uses cache, enforces quotas)
+- `GET /v1/business/:id/language-settings` - Get business language settings
+- `PUT /v1/business/:id/language-settings` - Update language settings
+- `GET /v1/business/:id/translation-usage` - Get daily translation quota usage
+- `POST /v1/business/:id/messages` - Create message with auto-translation
+- `GET /v1/business/:id/messages` - List messages (includes original + translated)
 
 ### Legacy Restaurant Endpoints (Backward Compatible)
 - `POST /api/admin/restaurant` - Create restaurant (also creates Business)

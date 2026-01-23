@@ -331,6 +331,178 @@ Update restaurant settings.
 
 ---
 
+## Internationalization (i18n) Endpoints
+
+Multi-language support for East Africa + Ethiopia with language detection, translation, caching, and daily quotas.
+
+### Supported Languages
+
+**UI Languages (Day 1):** en, sw, am, so, fr
+
+**Translation Languages (Day 1):** en, sw, am, so, fr, ar, om, ti, rw, lg
+
+### GET /v1/i18n/languages
+Get list of supported languages (public endpoint).
+
+**Response 200:**
+```json
+{
+  "uiLanguages": ["en", "sw", "am", "so", "fr"],
+  "translationLanguages": ["en", "sw", "am", "so", "fr", "ar", "om", "ti", "rw", "lg"]
+}
+```
+
+### POST /v1/i18n/detect
+Detect language of text. Requires auth.
+
+**Request:**
+```json
+{
+  "text": "Habari, nataka kusaidia"
+}
+```
+
+**Response 200:**
+```json
+{
+  "lang": "sw"
+}
+```
+
+### POST /v1/i18n/translate
+Translate text. Requires auth and active business. Uses translation cache and enforces daily quotas.
+
+**Request:**
+```json
+{
+  "text": "Hello, how can I help you?",
+  "to": "sw",
+  "from": "en",
+  "mode": "plain"
+}
+```
+
+**Response 200:**
+```json
+{
+  "from": "en",
+  "to": "sw",
+  "translatedText": "Habari, naweza kukusaidia vipi?",
+  "cached": false
+}
+```
+
+**Response 429 (Quota exceeded):**
+```json
+{
+  "error": "TRANSLATION_LIMIT_REACHED",
+  "limit": 200,
+  "plan": "free"
+}
+```
+
+### GET /v1/business/:id/language-settings
+Get business language settings. Requires auth.
+
+**Response 200:**
+```json
+{
+  "id": "uuid",
+  "uiLanguage": "en",
+  "incomingTranslateTo": "en",
+  "outgoingTranslateTo": "en",
+  "autoTranslateIncoming": true,
+  "autoTranslateOutgoing": false,
+  "plan": "free"
+}
+```
+
+### PUT /v1/business/:id/language-settings
+Update business language settings. Requires auth.
+
+**Request (all fields optional):**
+```json
+{
+  "uiLanguage": "sw",
+  "incomingTranslateTo": "en",
+  "outgoingTranslateTo": "sw",
+  "autoTranslateIncoming": true,
+  "autoTranslateOutgoing": true
+}
+```
+
+### GET /v1/business/:id/translation-usage
+Get daily translation usage and quota. Requires auth.
+
+**Response 200:**
+```json
+{
+  "businessId": "uuid",
+  "plan": "free",
+  "today": "2026-01-23",
+  "used": 45,
+  "limit": 200,
+  "remaining": 155
+}
+```
+
+### POST /v1/business/:id/messages
+Create a message with automatic translation. Requires auth.
+
+**Request:**
+```json
+{
+  "text": "Habari, nataka kusaidia",
+  "direction": "inbound",
+  "senderPhone": "+254700000000",
+  "conversationId": "uuid"
+}
+```
+
+**Response 201:**
+```json
+{
+  "id": "uuid",
+  "businessId": "uuid",
+  "textOriginal": "Habari, nataka kusaidia",
+  "langOriginal": "sw",
+  "textTranslated": "Hello, I want to help",
+  "langTranslated": "en",
+  "translationStatus": "done",
+  "translationError": null,
+  ...
+}
+```
+
+### GET /v1/business/:id/messages
+List messages with original and translated text. Requires auth.
+
+**Query params:** conversationId, limit, offset
+
+**Response 200:** Array of messages with both original and translated fields.
+
+---
+
+## Translation Quotas
+
+| Plan | Daily Limit |
+|------|-------------|
+| free | 200 translations |
+| pro  | 5000 translations |
+
+Cached translations do NOT count toward daily quota.
+
+---
+
+## Environment Variables (i18n)
+
+- `OPENAI_API_KEY` - Required for translation
+- `AI_TRANSLATION_MODEL` - Model to use (default: gpt-4o-mini)
+- `TRANSLATION_FREE_DAILY_LIMIT` - Free plan limit (default: 200)
+- `TRANSLATION_PRO_DAILY_LIMIT` - Pro plan limit (default: 5000)
+
+---
+
 ## Error Responses
 
 ```json
@@ -338,4 +510,6 @@ Update restaurant settings.
 { "error": "Unauthorized" }                      // 401
 { "error": "Resource not found" }                // 404
 { "error": "Email already registered" }          // 409
+{ "error": "TRANSLATION_LIMIT_REACHED", ... }    // 429
+{ "error": "Text exceeds maximum length..." }    // 413
 ```
