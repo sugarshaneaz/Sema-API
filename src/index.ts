@@ -15,6 +15,9 @@ import {
   isValidUILanguage,
   isValidTranslationLanguage,
 } from "./services/i18n";
+import multer from "multer";
+import { processFile, isValidFileType } from "./services/fileProcessor";
+import { ObjectStorageService } from "../server/replit_integrations/object_storage";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -1613,6 +1616,103 @@ app.delete("/api/admin/businesses/:id/catalog/items/:itemId", requireAdminAuth a
   } catch (error) {
     console.error("Error deleting catalog item:", error);
     res.status(500).json({ error: "Failed to delete catalog item" });
+  }
+});
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 20 * 1024 * 1024, // 20MB max
+  },
+});
+
+const objectStorageService = new ObjectStorageService();
+
+app.post("/api/admin/businesses/:id/upload-knowledge", requireAdminAuth as any, upload.single("file"), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const fileType = req.body.type as "pdf" | "image";
+
+    if (!req.file) {
+      res.status(400).json({ error: "No file uploaded" });
+      return;
+    }
+
+    if (!fileType || !["pdf", "image"].includes(fileType)) {
+      res.status(400).json({ error: "type must be 'pdf' or 'image'" });
+      return;
+    }
+
+    const business = await prisma.business.findFirst({
+      where: { id, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const mimeType = req.file.mimetype;
+    if (!isValidFileType(mimeType, fileType)) {
+      const allowedTypes = fileType === "image" 
+        ? "JPEG, PNG, WEBP" 
+        : "PDF";
+      res.status(400).json({ error: `Invalid file type. Allowed: ${allowedTypes}` });
+      return;
+    }
+
+    const processed = await processFile(req.file.buffer, mimeType, fileType);
+
+    const uploadUrl = await objectStorageService.getObjectEntityUploadURL();
+    const objectPath = objectStorageService.normalizeObjectEntityPath(uploadUrl);
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "PUT",
+      body: processed.buffer,
+      headers: {
+        "Content-Type": processed.contentType,
+      },
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error("Failed to upload to object storage");
+    }
+
+    await objectStorageService.trySetObjectEntityAclPolicy(uploadUrl, {
+      owner: req.admin!.id,
+      visibility: "private",
+    });
+
+    if (processed.extractedText) {
+      const existingKnowledge = (business.settings as any)?.knowledgeBase || "";
+      const updatedKnowledge = existingKnowledge 
+        ? `${existingKnowledge}\n\n---\n\n${processed.extractedText}`
+        : processed.extractedText;
+
+      await prisma.business.update({
+        where: { id },
+        data: {
+          settings: {
+            ...(business.settings as object || {}),
+            knowledgeBase: updatedKnowledge,
+          },
+        },
+      });
+    }
+
+    res.json({
+      success: true,
+      file: {
+        url: objectPath,
+        originalSize: processed.originalSize,
+        compressedSize: processed.compressedSize,
+        extractedText: processed.extractedText,
+      },
+    });
+  } catch (error) {
+    console.error("Error processing upload:", error);
+    const message = error instanceof Error ? error.message : "Failed to process upload";
+    res.status(500).json({ error: message });
   }
 });
 
