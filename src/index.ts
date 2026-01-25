@@ -1664,7 +1664,6 @@ app.post("/api/admin/businesses/:id/upload-knowledge", requireAdminAuth as any, 
     const processed = await processFile(req.file.buffer, mimeType, fileType);
 
     const uploadUrl = await objectStorageService.getObjectEntityUploadURL();
-    const objectPath = objectStorageService.normalizeObjectEntityPath(uploadUrl);
 
     const uploadResponse = await fetch(uploadUrl, {
       method: "PUT",
@@ -1678,7 +1677,7 @@ app.post("/api/admin/businesses/:id/upload-knowledge", requireAdminAuth as any, 
       throw new Error("Failed to upload to object storage");
     }
 
-    await objectStorageService.trySetObjectEntityAclPolicy(uploadUrl, {
+    const normalizedPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadUrl, {
       owner: req.admin!.id,
       visibility: "private",
     });
@@ -1703,14 +1702,18 @@ app.post("/api/admin/businesses/:id/upload-knowledge", requireAdminAuth as any, 
     res.json({
       success: true,
       file: {
-        url: objectPath,
+        url: normalizedPath,
         originalSize: processed.originalSize,
         compressedSize: processed.compressedSize,
         extractedText: processed.extractedText,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error processing upload:", error);
+    if (error.code === "LIMIT_FILE_SIZE") {
+      res.status(400).json({ error: "File too large. Maximum size is 20MB." });
+      return;
+    }
     const message = error instanceof Error ? error.message : "Failed to process upload";
     res.status(500).json({ error: message });
   }

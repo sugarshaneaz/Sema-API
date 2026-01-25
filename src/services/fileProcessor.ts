@@ -84,34 +84,6 @@ export async function processPdf(buffer: Buffer): Promise<ProcessedFile> {
     console.error("PDF compression failed, using original:", error);
   }
   
-  if (!extractedText && buffer.length > 0) {
-    try {
-      const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
-      const pages = pdfDoc.getPages();
-      
-      if (pages.length > 0) {
-        const firstPage = pages[0];
-        const { width, height } = firstPage.getSize();
-        
-        const pngBuffer = await sharp({
-          create: {
-            width: Math.min(Math.round(width * 2), 2000),
-            height: Math.min(Math.round(height * 2), 2000),
-            channels: 4,
-            background: { r: 255, g: 255, b: 255, alpha: 1 }
-          }
-        }).png().toBuffer();
-        
-        const result = await Tesseract.recognize(pngBuffer, "eng+swa+amh", {
-          logger: () => {},
-        });
-        extractedText = result.data.text.trim();
-      }
-    } catch (ocrError) {
-      console.error("PDF OCR failed:", ocrError);
-    }
-  }
-  
   return {
     buffer: compressedBuffer,
     originalSize,
