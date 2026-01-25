@@ -242,6 +242,50 @@ Delete a catalog item.
 
 ---
 
+## Knowledge Upload Endpoint
+
+### POST /api/admin/businesses/:id/upload-knowledge
+Upload and process files (PDFs, images) for AI training. Compresses files and extracts text content.
+
+**Request:**
+```
+Content-Type: multipart/form-data
+file: <binary>
+type: "pdf" | "image"
+```
+
+**Supported File Types:**
+- **Images:** JPEG, PNG, WEBP (resized to max 1600px width, 70% JPEG quality)
+- **PDFs:** Up to 20MB (metadata stripped, compressed)
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "file": {
+    "url": "/objects/uploads/uuid",
+    "originalSize": 8500000,
+    "compressedSize": 2100000,
+    "extractedText": "Menu items: Chapati 20 KES, Mandazi 10 KES..."
+  }
+}
+```
+
+**Features:**
+- Image compression with sharp (resize, quality reduction)
+- PDF compression with pdf-lib (metadata stripping)
+- Text extraction from PDFs using pdf-parse
+- OCR for images and image-based PDFs using tesseract.js
+- Extracted text stored in business `settings.knowledgeBase`
+- Files stored in object storage with private visibility
+
+**Error Responses:**
+- 400: Invalid file type or missing required fields
+- 404: Business not found
+- 500: Processing or upload failure
+
+---
+
 ## Legacy Restaurant Endpoints (Backward Compatible)
 
 These endpoints continue to work for existing mobile clients. They now internally create/sync with Business entities.

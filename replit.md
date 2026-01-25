@@ -143,6 +143,9 @@ A minimal Express TypeScript API server with WhatsApp webhook integration, multi
 - `POST /v1/business/:id/messages` - Create message with auto-translation
 - `GET /v1/business/:id/messages` - List messages (includes original + translated)
 
+### Knowledge Upload (requires Bearer token)
+- `POST /api/admin/businesses/:id/upload-knowledge` - Upload PDF/image, compress, extract text, store in object storage
+
 ### Legacy Restaurant Endpoints (Backward Compatible)
 - `POST /api/admin/restaurant` - Create restaurant (also creates Business)
 - `GET /api/admin/restaurant` - Get restaurant with menu
