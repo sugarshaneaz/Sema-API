@@ -18,6 +18,8 @@ import {
 import multer from "multer";
 import { processFile, isValidFileType } from "./services/fileProcessor";
 import { ObjectStorageService } from "../server/replit_integrations/object_storage";
+import * as cheerio from "cheerio";
+import OpenAI from "openai";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -1715,6 +1717,146 @@ app.post("/api/admin/businesses/:id/upload-knowledge", requireAdminAuth as any, 
       return;
     }
     const message = error instanceof Error ? error.message : "Failed to process upload";
+    res.status(500).json({ error: message });
+  }
+});
+
+const scraperOpenAI = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+});
+
+app.post("/api/admin/businesses/:id/scrape-website", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { url } = req.body;
+
+    if (!url || typeof url !== "string") {
+      res.status(400).json({ error: "url is required" });
+      return;
+    }
+
+    try {
+      new URL(url);
+    } catch {
+      res.status(400).json({ error: "Invalid URL format" });
+      return;
+    }
+
+    const business = await prisma.business.findFirst({
+      where: { id, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ error: "Business not found" });
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    let html: string;
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; SemaBot/1.0; +https://sema.app)",
+          "Accept": "text/html,application/xhtml+xml",
+        },
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        res.status(400).json({ error: `Failed to fetch website: HTTP ${response.status}` });
+        return;
+      }
+
+      html = await response.text();
+    } catch (fetchError: any) {
+      clearTimeout(timeout);
+      if (fetchError.name === "AbortError") {
+        res.status(408).json({ error: "Request timeout - website took too long to respond" });
+        return;
+      }
+      res.status(400).json({ error: `Failed to fetch website: ${fetchError.message}` });
+      return;
+    }
+
+    const $ = cheerio.load(html);
+
+    $("script, style, nav, header, footer, iframe, noscript, svg, meta, link").remove();
+
+    const textParts: string[] = [];
+    
+    const title = $("title").text().trim();
+    if (title) textParts.push(`Page Title: ${title}`);
+
+    $("h1, h2, h3, p, li, td, th, span, div, article, section, main").each((_, el) => {
+      const text = $(el).clone().children().remove().end().text().trim();
+      if (text && text.length > 10) {
+        textParts.push(text);
+      }
+    });
+
+    let extractedText = textParts.join("\n").slice(0, 10000);
+
+    if (!extractedText || extractedText.length < 50) {
+      res.status(400).json({ error: "Could not extract meaningful content from the website" });
+      return;
+    }
+
+    const aiPrompt = `You are extracting business information from a scraped website. 
+The business type is: ${business.type}
+The business name is: ${business.name}
+
+Analyze the following website content and extract relevant business information. Format it clearly with sections like:
+- Products/Services with prices (if found)
+- Business hours
+- Location/Address
+- Contact information
+- Delivery/shipping policies
+- FAQs or important policies
+- About the business
+
+Only include sections where you found relevant information. Be concise but complete.
+
+Website content:
+${extractedText}`;
+
+    const aiResponse = await scraperOpenAI.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "You are a helpful assistant that extracts and formats business information from website content." },
+        { role: "user", content: aiPrompt },
+      ],
+      max_tokens: 1500,
+      temperature: 0.3,
+    });
+
+    const summarizedContent = aiResponse.choices[0]?.message?.content || extractedText;
+
+    const existingKnowledge = (business.settings as any)?.knowledgeBase || "";
+    const updatedKnowledge = existingKnowledge
+      ? `${existingKnowledge}\n\n---\n\n[Scraped from ${url}]\n${summarizedContent}`
+      : `[Scraped from ${url}]\n${summarizedContent}`;
+
+    await prisma.business.update({
+      where: { id },
+      data: {
+        settings: {
+          ...(business.settings as object || {}),
+          knowledgeBase: updatedKnowledge,
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      content: summarizedContent,
+    });
+  } catch (error) {
+    console.error("Error scraping website:", error);
+    const message = error instanceof Error ? error.message : "Failed to scrape website";
     res.status(500).json({ error: message });
   }
 });
