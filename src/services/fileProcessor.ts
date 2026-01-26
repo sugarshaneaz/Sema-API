@@ -1,7 +1,8 @@
 import sharp from "sharp";
 import { PDFDocument } from "pdf-lib";
-import pdfParse from "pdf-parse";
 import Tesseract from "tesseract.js";
+
+const pdfParse = require("pdf-parse");
 
 const MAX_IMAGE_WIDTH = 1600;
 const JPEG_QUALITY = 70;

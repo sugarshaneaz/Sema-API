@@ -17,7 +17,7 @@ import {
 } from "./services/i18n";
 import multer from "multer";
 import { processFile, isValidFileType } from "./services/fileProcessor";
-import { ObjectStorageService } from "../server/replit_integrations/object_storage";
+import { ObjectStorageService } from "./integrations/object_storage";
 import * as cheerio from "cheerio";
 import OpenAI from "openai";
 
@@ -1669,7 +1669,7 @@ app.post("/api/admin/businesses/:id/upload-knowledge", requireAdminAuth as any, 
 
     const uploadResponse = await fetch(uploadUrl, {
       method: "PUT",
-      body: processed.buffer,
+      body: new Uint8Array(processed.buffer),
       headers: {
         "Content-Type": processed.contentType,
       },
