@@ -1726,6 +1726,126 @@ const scraperOpenAI = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+const scrapeRateLimits = new Map<string, { count: number; resetAt: number }>();
+
+app.post("/api/admin/scrape-website", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const adminId = req.admin!.id;
+    const now = Date.now();
+    const rateLimit = scrapeRateLimits.get(adminId);
+    
+    if (rateLimit && now < rateLimit.resetAt) {
+      if (rateLimit.count >= 5) {
+        res.status(429).json({ success: false, message: "Rate limit exceeded. Max 5 requests per minute." });
+        return;
+      }
+      rateLimit.count++;
+    } else {
+      scrapeRateLimits.set(adminId, { count: 1, resetAt: now + 60000 });
+    }
+
+    const { url } = req.body;
+
+    if (!url || typeof url !== "string") {
+      res.status(400).json({ success: false, message: "url is required" });
+      return;
+    }
+
+    try {
+      new URL(url);
+    } catch {
+      res.status(400).json({ success: false, message: "Invalid URL format" });
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    let html: string;
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; SemaBot/1.0; +https://sema.app)",
+          "Accept": "text/html,application/xhtml+xml",
+        },
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        res.status(400).json({ success: false, message: `Failed to fetch website: HTTP ${response.status}` });
+        return;
+      }
+
+      html = await response.text();
+    } catch (fetchError: any) {
+      clearTimeout(timeout);
+      if (fetchError.name === "AbortError") {
+        res.status(408).json({ success: false, message: "Request timeout - website took too long to respond" });
+        return;
+      }
+      res.status(400).json({ success: false, message: `Failed to fetch website: ${fetchError.message}` });
+      return;
+    }
+
+    const $ = cheerio.load(html);
+    $("script, style, nav, header, footer, iframe, noscript, svg, meta, link").remove();
+
+    const textParts: string[] = [];
+    const title = $("title").text().trim();
+    if (title) textParts.push(`Page Title: ${title}`);
+
+    $("h1, h2, h3, p, li, td, th, span, div, article, section, main").each((_, el) => {
+      const text = $(el).clone().children().remove().end().text().trim();
+      if (text && text.length > 10) {
+        textParts.push(text);
+      }
+    });
+
+    let extractedText = textParts.join("\n").slice(0, 10000);
+
+    if (!extractedText || extractedText.length < 50) {
+      res.status(400).json({ success: false, message: "Could not extract meaningful content from the website" });
+      return;
+    }
+
+    const aiPrompt = `Analyze the following website content and extract relevant business information. Format it clearly with sections like:
+- Products/Services with prices (if found)
+- Business hours
+- Location/Address
+- Contact information
+- Delivery/shipping policies
+- FAQs or important policies
+- About the business
+
+Only include sections where you found relevant information. Be concise but complete.
+
+Website content:
+${extractedText}`;
+
+    const aiResponse = await scraperOpenAI.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "You are a helpful assistant that extracts and formats business information from website content." },
+        { role: "user", content: aiPrompt },
+      ],
+      max_tokens: 1500,
+      temperature: 0.3,
+    });
+
+    const summarizedContent = aiResponse.choices[0]?.message?.content || extractedText;
+
+    res.json({
+      success: true,
+      content: summarizedContent,
+    });
+  } catch (error) {
+    console.error("Error scraping website:", error);
+    const message = error instanceof Error ? error.message : "Failed to scrape website";
+    res.status(500).json({ success: false, message });
+  }
+});
+
 app.post("/api/admin/businesses/:id/scrape-website", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
