@@ -145,6 +145,7 @@ A minimal Express TypeScript API server with WhatsApp webhook integration, multi
 
 ### Knowledge Upload (requires Bearer token)
 - `POST /api/admin/businesses/:id/upload-knowledge` - Upload PDF/image, compress, extract text, store in object storage
+- `POST /api/admin/businesses/:id/scrape-website` - Scrape website, extract content with AI, store in knowledgeBase
 
 ### Legacy Restaurant Endpoints (Backward Compatible)
 - `POST /api/admin/restaurant` - Create restaurant (also creates Business)

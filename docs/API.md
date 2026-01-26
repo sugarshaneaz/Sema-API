@@ -284,6 +284,40 @@ type: "pdf" | "image"
 - 404: Business not found
 - 500: Processing or upload failure
 
+### POST /api/admin/businesses/:id/scrape-website
+Scrape a website and extract business-relevant information using AI.
+
+**Request:**
+```json
+{
+  "url": "https://example-restaurant.com"
+}
+```
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "content": "Menu Items:\n- Chapati: 20 KES\n- Mandazi: 10 KES\n\nHours: Mon-Sat 7am-8pm\n\nDelivery available within 5km"
+}
+```
+
+**Features:**
+- Fetches and parses HTML using cheerio
+- Removes scripts, styles, navigation, and other non-content elements
+- Extracts text from headings, paragraphs, lists, and tables
+- Uses AI (GPT-4o-mini) to summarize and structure the content
+- Extracts: products/services with prices, hours, location, contact info, policies
+- Automatically appends extracted content to business `settings.knowledgeBase`
+- 10 second timeout to prevent hanging on slow sites
+- Limits extracted text to 10,000 characters before AI processing
+
+**Error Responses:**
+- 400: Invalid URL, site unreachable, or no meaningful content extracted
+- 404: Business not found
+- 408: Request timeout (website took too long)
+- 500: Processing failure
+
 ---
 
 ## Legacy Restaurant Endpoints (Backward Compatible)
