@@ -7,18 +7,56 @@ datasource db {
 }
 
 model WhatsappConnection {
-  id                 String   @id @default(uuid())
+  id                 String    @id @default(uuid())
   wabaId             String
-  phoneNumberId      String   @unique
+  phoneNumberId      String    @unique
   accessToken        String
   displayPhoneNumber String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  enabled            Boolean   @default(true)
+  mode               String    @default("REVIEW")
+  pausedUntil        DateTime?
+  lastInboundAt      DateTime?
+  lastOutboundAt     DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   businessProfile    BusinessProfile?
   conversations      Conversation[]
 
   @@map("whatsapp_connections")
+}
+
+model WhatsappMessage {
+  id             String   @id @default(uuid())
+  phoneNumberId  String
+  direction      String
+  fromNumber     String?
+  toNumber       String?
+  waMessageId    String?
+  text           String?
+  rawPayload     Json?
+  status         String   @default("RECEIVED")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([phoneNumberId, createdAt])
+  @@index([waMessageId])
+  @@map("whatsapp_messages")
+}
+
+model WhatsappDraft {
+  id             String   @id @default(uuid())
+  phoneNumberId  String
+  inboundMsgId   String?
+  toNumber       String
+  text           String
+  createdBy      String?
+  status         String   @default("PENDING")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([phoneNumberId, createdAt])
+  @@map("whatsapp_drafts")
 }
 
 model Niche {

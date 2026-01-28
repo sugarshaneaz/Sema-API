@@ -32,6 +32,12 @@ const prisma = new PrismaClient({ adapter });
 app.use(cors());
 app.use(express.json());
 
+function maskToken(token: string | null | undefined): string {
+  if (!token) return "***masked***";
+  const last4 = token.slice(-4);
+  return `***masked***${last4}`;
+}
+
 app.get("/", (_req: Request, res: Response) => {
   res.json({
     name: "sema-api",
@@ -115,8 +121,13 @@ app.post("/api/whatsapp/connect", async (req: Request, res: Response) => {
       id: connection.id,
       wabaId: connection.wabaId,
       phoneNumberId: connection.phoneNumberId,
-      accessToken: "***masked***",
+      accessToken: maskToken(connection.accessToken),
       displayPhoneNumber: connection.displayPhoneNumber,
+      enabled: connection.enabled,
+      mode: connection.mode,
+      pausedUntil: connection.pausedUntil,
+      lastInboundAt: connection.lastInboundAt,
+      lastOutboundAt: connection.lastOutboundAt,
       createdAt: connection.createdAt,
       updatedAt: connection.updatedAt,
     });
@@ -136,8 +147,13 @@ app.get("/api/whatsapp/connections", async (_req: Request, res: Response) => {
       id: conn.id,
       wabaId: conn.wabaId,
       phoneNumberId: conn.phoneNumberId,
-      accessToken: "***masked***",
+      accessToken: maskToken(conn.accessToken),
       displayPhoneNumber: conn.displayPhoneNumber,
+      enabled: conn.enabled,
+      mode: conn.mode,
+      pausedUntil: conn.pausedUntil,
+      lastInboundAt: conn.lastInboundAt,
+      lastOutboundAt: conn.lastOutboundAt,
       createdAt: conn.createdAt,
       updatedAt: conn.updatedAt,
     }));
@@ -146,6 +162,311 @@ app.get("/api/whatsapp/connections", async (_req: Request, res: Response) => {
   } catch (error) {
     console.error("Error fetching connections:", error instanceof Error ? error.stack : error);
     res.status(500).json({ error: "Failed to fetch connections", code: "CONNECTIONS_FETCH_FAILED" });
+  }
+});
+
+app.get("/api/whatsapp/connections/:phoneNumberId", async (req: Request, res: Response) => {
+  try {
+    const { phoneNumberId } = req.params;
+    const connection = await prisma.whatsappConnection.findUnique({
+      where: { phoneNumberId },
+    });
+
+    if (!connection) {
+      res.status(404).json({ error: "Connection not found" });
+      return;
+    }
+
+    res.json({
+      id: connection.id,
+      wabaId: connection.wabaId,
+      phoneNumberId: connection.phoneNumberId,
+      accessToken: maskToken(connection.accessToken),
+      displayPhoneNumber: connection.displayPhoneNumber,
+      enabled: connection.enabled,
+      mode: connection.mode,
+      pausedUntil: connection.pausedUntil,
+      lastInboundAt: connection.lastInboundAt,
+      lastOutboundAt: connection.lastOutboundAt,
+      createdAt: connection.createdAt,
+      updatedAt: connection.updatedAt,
+    });
+  } catch (error) {
+    console.error("Error fetching connection:", error instanceof Error ? error.stack : error);
+    res.status(500).json({ error: "Failed to fetch connection" });
+  }
+});
+
+app.patch("/api/whatsapp/connections/:phoneNumberId", async (req: Request, res: Response) => {
+  try {
+    const { phoneNumberId } = req.params;
+    const { enabled, mode, pausedUntil } = req.body;
+
+    const connection = await prisma.whatsappConnection.findUnique({
+      where: { phoneNumberId },
+    });
+
+    if (!connection) {
+      res.status(404).json({ error: "Connection not found" });
+      return;
+    }
+
+    const validModes = ["OFF", "REVIEW", "AUTO"];
+    if (mode !== undefined && !validModes.includes(mode)) {
+      res.status(400).json({ error: "Invalid mode. Must be OFF, REVIEW, or AUTO" });
+      return;
+    }
+
+    let updateData: any = {};
+
+    if (enabled !== undefined) {
+      updateData.enabled = enabled;
+      if (enabled === false && mode === undefined) {
+        updateData.mode = "OFF";
+      }
+      if (enabled === true && mode === undefined && connection.mode === "OFF") {
+        updateData.mode = "REVIEW";
+      }
+    }
+
+    if (mode !== undefined) {
+      updateData.mode = mode;
+    }
+
+    if (pausedUntil !== undefined) {
+      updateData.pausedUntil = pausedUntil ? new Date(pausedUntil) : null;
+    }
+
+    const updated = await prisma.whatsappConnection.update({
+      where: { phoneNumberId },
+      data: updateData,
+    });
+
+    res.json({
+      id: updated.id,
+      wabaId: updated.wabaId,
+      phoneNumberId: updated.phoneNumberId,
+      accessToken: maskToken(updated.accessToken),
+      displayPhoneNumber: updated.displayPhoneNumber,
+      enabled: updated.enabled,
+      mode: updated.mode,
+      pausedUntil: updated.pausedUntil,
+      lastInboundAt: updated.lastInboundAt,
+      lastOutboundAt: updated.lastOutboundAt,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    });
+  } catch (error) {
+    console.error("Error updating connection:", error instanceof Error ? error.stack : error);
+    res.status(500).json({ error: "Failed to update connection" });
+  }
+});
+
+app.get("/api/whatsapp/status/:phoneNumberId", async (req: Request, res: Response) => {
+  try {
+    const { phoneNumberId } = req.params;
+    const connection = await prisma.whatsappConnection.findUnique({
+      where: { phoneNumberId },
+    });
+
+    if (!connection) {
+      res.json({
+        exists: false,
+        enabled: null,
+        mode: null,
+        pausedUntil: null,
+        lastInboundAt: null,
+        lastOutboundAt: null,
+      });
+      return;
+    }
+
+    res.json({
+      exists: true,
+      enabled: connection.enabled,
+      mode: connection.mode,
+      pausedUntil: connection.pausedUntil,
+      lastInboundAt: connection.lastInboundAt,
+      lastOutboundAt: connection.lastOutboundAt,
+    });
+  } catch (error) {
+    console.error("Error fetching status:", error instanceof Error ? error.stack : error);
+    res.status(500).json({ error: "Failed to fetch status" });
+  }
+});
+
+app.get("/api/whatsapp/messages", async (req: Request, res: Response) => {
+  try {
+    const { phoneNumberId, limit, cursor } = req.query;
+
+    if (!phoneNumberId || typeof phoneNumberId !== "string") {
+      res.status(400).json({ error: "phoneNumberId is required" });
+      return;
+    }
+
+    const take = Math.min(parseInt(limit as string) || 50, 100);
+
+    let where: any = { phoneNumberId };
+    if (cursor && typeof cursor === "string") {
+      where.createdAt = { lt: new Date(cursor) };
+    }
+
+    const messages = await prisma.whatsappMessage.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take,
+    });
+
+    const nextCursor = messages.length === take ? messages[messages.length - 1].createdAt.toISOString() : null;
+
+    res.json({
+      messages,
+      nextCursor,
+    });
+  } catch (error) {
+    console.error("Error fetching messages:", error instanceof Error ? error.stack : error);
+    res.status(500).json({ error: "Failed to fetch messages" });
+  }
+});
+
+app.get("/api/whatsapp/drafts", async (req: Request, res: Response) => {
+  try {
+    const { phoneNumberId, status } = req.query;
+
+    if (!phoneNumberId || typeof phoneNumberId !== "string") {
+      res.status(400).json({ error: "phoneNumberId is required" });
+      return;
+    }
+
+    let where: any = { phoneNumberId };
+    if (status && typeof status === "string") {
+      where.status = status;
+    }
+
+    const drafts = await prisma.whatsappDraft.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json(drafts);
+  } catch (error) {
+    console.error("Error fetching drafts:", error instanceof Error ? error.stack : error);
+    res.status(500).json({ error: "Failed to fetch drafts" });
+  }
+});
+
+app.post("/api/whatsapp/drafts", async (req: Request, res: Response) => {
+  try {
+    const { phoneNumberId, toNumber, text, inboundMsgId, createdBy } = req.body;
+
+    if (!phoneNumberId || !toNumber || !text) {
+      res.status(400).json({ error: "phoneNumberId, toNumber, and text are required" });
+      return;
+    }
+
+    const draft = await prisma.whatsappDraft.create({
+      data: {
+        phoneNumberId,
+        toNumber,
+        text,
+        inboundMsgId: inboundMsgId || null,
+        createdBy: createdBy || null,
+        status: "PENDING",
+      },
+    });
+
+    res.status(201).json(draft);
+  } catch (error) {
+    console.error("Error creating draft:", error instanceof Error ? error.stack : error);
+    res.status(500).json({ error: "Failed to create draft" });
+  }
+});
+
+app.post("/api/whatsapp/drafts/:id/send", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const draft = await prisma.whatsappDraft.findUnique({
+      where: { id },
+    });
+
+    if (!draft) {
+      res.status(404).json({ error: "Draft not found" });
+      return;
+    }
+
+    if (draft.status !== "PENDING") {
+      res.status(400).json({ error: `Cannot send draft with status ${draft.status}` });
+      return;
+    }
+
+    const connection = await prisma.whatsappConnection.findUnique({
+      where: { phoneNumberId: draft.phoneNumberId },
+    });
+
+    if (!connection) {
+      res.status(404).json({ error: "Connection not found for this draft" });
+      return;
+    }
+
+    const graphResponse = await fetch(
+      `https://graph.facebook.com/v20.0/${draft.phoneNumberId}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${connection.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: draft.toNumber,
+          type: "text",
+          text: { body: draft.text },
+        }),
+      }
+    );
+
+    const graphBody = await graphResponse.json();
+
+    if (!graphResponse.ok) {
+      console.error("Graph API error sending draft:", { status: graphResponse.status, body: graphBody });
+      await prisma.whatsappDraft.update({
+        where: { id },
+        data: { status: "FAILED" },
+      });
+      res.status(500).json({ error: "Failed to send message via WhatsApp" });
+      return;
+    }
+
+    await prisma.whatsappDraft.update({
+      where: { id },
+      data: { status: "SENT" },
+    });
+
+    const outboundMessage = await prisma.whatsappMessage.create({
+      data: {
+        phoneNumberId: draft.phoneNumberId,
+        direction: "OUT",
+        toNumber: draft.toNumber,
+        waMessageId: graphBody?.messages?.[0]?.id || null,
+        text: draft.text,
+        status: "SENT",
+      },
+    });
+
+    await prisma.whatsappConnection.update({
+      where: { phoneNumberId: draft.phoneNumberId },
+      data: { lastOutboundAt: new Date() },
+    });
+
+    res.json({
+      success: true,
+      draft: { ...draft, status: "SENT" },
+      message: outboundMessage,
+    });
+  } catch (error) {
+    console.error("Error sending draft:", error instanceof Error ? error.stack : error);
+    res.status(500).json({ error: "Failed to send draft" });
   }
 });
 
@@ -175,15 +496,28 @@ app.post("/webhooks/whatsapp", (req: Request, res: Response) => {
       const value = body?.entry?.[0]?.changes?.[0]?.value;
       const phoneNumberId = value?.metadata?.phone_number_id;
       const msg = value?.messages?.[0];
+      const waMessageId = msg?.id;
       const from = msg?.from;
       const text = msg?.text?.body || "(no text)";
 
       console.log("incoming webhook", { phone_number_id: phoneNumberId || null, from: from || null });
 
       if (!phoneNumberId || !from) {
-        console.log("Missing phoneNumberId or from, skipping auto-reply");
+        console.log("Missing phoneNumberId or from, skipping processing");
         return;
       }
+
+      await prisma.whatsappMessage.create({
+        data: {
+          phoneNumberId,
+          direction: "IN",
+          fromNumber: from,
+          waMessageId: waMessageId || null,
+          text,
+          rawPayload: body,
+          status: "RECEIVED",
+        },
+      });
 
       const connection = await prisma.whatsappConnection.findUnique({
         where: { phoneNumberId },
@@ -195,90 +529,129 @@ app.post("/webhooks/whatsapp", (req: Request, res: Response) => {
         return;
       }
 
-      console.log(`Connection found for ${phoneNumberId}, processing message from ${from}`);
-
-      let conversation = await prisma.conversation.findUnique({
-        where: { connectionId_customerPhone: { connectionId: connection.id, customerPhone: from } },
+      await prisma.whatsappConnection.update({
+        where: { phoneNumberId },
+        data: { lastInboundAt: new Date() },
       });
 
-      if (!conversation) {
-        conversation = await prisma.conversation.create({
-          data: { connectionId: connection.id, customerPhone: from },
-        });
-      }
+      const now = new Date();
+      const isPaused = connection.pausedUntil && connection.pausedUntil > now;
+      const isDisabled = !connection.enabled || connection.mode === "OFF" || isPaused;
 
-      if (conversation.needsHuman) {
-        console.log(`Conversation ${conversation.id} is escalated, skipping AI reply`);
+      if (isDisabled) {
+        console.log(`Connection disabled for ${phoneNumberId} (enabled=${connection.enabled}, mode=${connection.mode}, paused=${isPaused}), ignoring auto-reply`);
         return;
       }
 
-      const history = (conversation.messageHistory as unknown as ConversationMessage[]) || [];
-
-      const businessContext = await loadBusinessContext(prisma, connection.id);
-
-      let replyText: string;
-
-      if (!businessContext) {
-        replyText = "Sema ✅ I received: " + text;
-        console.log("No business profile configured, using fallback reply");
-      } else {
-        const safetyCheck = checkSafetyTriggers(text, businessContext.template);
-
-        if (safetyCheck.shouldRefuse) {
-          replyText = safetyCheck.message || "I'm not able to help with that request.";
-          console.log("Safety refusal triggered");
-        } else if (safetyCheck.shouldEscalate) {
-          await prisma.conversation.update({
-            where: { id: conversation.id },
-            data: {
-              needsHuman: true,
-              escalationReason: `Triggered by message: "${text.slice(0, 100)}"`,
-              status: "escalated",
-            },
-          });
-          replyText = safetyCheck.message || "Let me connect you with someone who can help better.";
-          console.log("Escalation triggered, conversation marked for human handoff");
-        } else {
-          try {
-            replyText = await generateAIResponse(businessContext, text, history);
-            console.log("AI response generated successfully");
-          } catch (aiError) {
-            console.error("AI generation failed:", aiError instanceof Error ? aiError.message : aiError);
-            replyText = "I'm having trouble processing your request. Please try again in a moment.";
-          }
-        }
+      if (connection.mode === "REVIEW") {
+        console.log(`Connection in REVIEW mode for ${phoneNumberId}, no auto-reply`);
+        return;
       }
 
-      const updatedHistory: ConversationMessage[] = [
-        ...history.slice(-19),
-        { role: "user", content: text },
-        { role: "assistant", content: replyText },
-      ];
+      if (connection.mode === "AUTO") {
+        console.log(`Connection in AUTO mode for ${phoneNumberId}, processing message from ${from}`);
 
-      await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: { messageHistory: updatedHistory as unknown as any },
-      });
+        let conversation = await prisma.conversation.findUnique({
+          where: { connectionId_customerPhone: { connectionId: connection.id, customerPhone: from } },
+        });
 
-      const graphResponse = await fetch(
-        `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
-        {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${connection.accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            messaging_product: "whatsapp",
-            to: from,
-            type: "text",
-            text: { body: replyText },
-          }),
+        if (!conversation) {
+          conversation = await prisma.conversation.create({
+            data: { connectionId: connection.id, customerPhone: from },
+          });
         }
-      );
 
-      const graphBody = await graphResponse.text();
-      console.log("Graph API response:", { status: graphResponse.status, body: graphBody });
+        if (conversation.needsHuman) {
+          console.log(`Conversation ${conversation.id} is escalated, skipping AI reply`);
+          return;
+        }
+
+        const history = (conversation.messageHistory as unknown as ConversationMessage[]) || [];
+
+        const businessContext = await loadBusinessContext(prisma, connection.id);
+
+        let replyText: string;
+
+        if (!businessContext) {
+          replyText = "Thanks! We received your message. A team member will reply shortly.";
+          console.log("No business profile configured, using auto-reply fallback");
+        } else {
+          const safetyCheck = checkSafetyTriggers(text, businessContext.template);
+
+          if (safetyCheck.shouldRefuse) {
+            replyText = safetyCheck.message || "I'm not able to help with that request.";
+            console.log("Safety refusal triggered");
+          } else if (safetyCheck.shouldEscalate) {
+            await prisma.conversation.update({
+              where: { id: conversation.id },
+              data: {
+                needsHuman: true,
+                escalationReason: `Triggered by message: "${text.slice(0, 100)}"`,
+                status: "escalated",
+              },
+            });
+            replyText = safetyCheck.message || "Let me connect you with someone who can help better.";
+            console.log("Escalation triggered, conversation marked for human handoff");
+          } else {
+            try {
+              replyText = await generateAIResponse(businessContext, text, history);
+              console.log("AI response generated successfully");
+            } catch (aiError) {
+              console.error("AI generation failed:", aiError instanceof Error ? aiError.message : aiError);
+              replyText = "I'm having trouble processing your request. Please try again in a moment.";
+            }
+          }
+        }
+
+        const updatedHistory: ConversationMessage[] = [
+          ...history.slice(-19),
+          { role: "user", content: text },
+          { role: "assistant", content: replyText },
+        ];
+
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { messageHistory: updatedHistory as unknown as any },
+        });
+
+        const graphResponse = await fetch(
+          `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${connection.accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              messaging_product: "whatsapp",
+              to: from,
+              type: "text",
+              text: { body: replyText },
+            }),
+          }
+        );
+
+        const graphBody = await graphResponse.json();
+        console.log("Graph API response:", { status: graphResponse.status });
+
+        if (graphResponse.ok) {
+          await prisma.whatsappMessage.create({
+            data: {
+              phoneNumberId,
+              direction: "OUT",
+              toNumber: from,
+              waMessageId: graphBody?.messages?.[0]?.id || null,
+              text: replyText,
+              status: "SENT",
+            },
+          });
+
+          await prisma.whatsappConnection.update({
+            where: { phoneNumberId },
+            data: { lastOutboundAt: new Date() },
+          });
+        }
+      }
 
     } catch (error) {
       console.error("Error processing webhook:", error instanceof Error ? error.stack : error);

@@ -100,7 +100,31 @@ A minimal Express TypeScript API server with WhatsApp webhook integration, multi
 - Unique constraint: (businessId, day)
 
 ### WhatsApp Domain Models
-- whatsapp_connections, business_profiles, niches, niche_templates
+
+### whatsapp_connections
+- `id` (UUID, primary key)
+- `wabaId`, `phoneNumberId` (unique), `accessToken`, `displayPhoneNumber`
+- `enabled` (Boolean, default true) - Toggle connection on/off
+- `mode` (String, default "REVIEW") - OFF | REVIEW | AUTO
+- `pausedUntil` (DateTime, nullable) - Optional pause window
+- `lastInboundAt`, `lastOutboundAt` (DateTime, nullable)
+- Relations: businessProfile, conversations
+
+### whatsapp_messages
+- `id` (UUID, primary key)
+- `phoneNumberId`, `direction` (IN/OUT), `fromNumber`, `toNumber`
+- `waMessageId`, `text`, `rawPayload` (JSON)
+- `status` (String, default "RECEIVED") - RECEIVED | DRAFT | SENT | FAILED
+- Indexes: (phoneNumberId, createdAt), (waMessageId)
+
+### whatsapp_drafts
+- `id` (UUID, primary key)
+- `phoneNumberId`, `inboundMsgId` (nullable), `toNumber`, `text`
+- `createdBy` (nullable), `status` (default "PENDING") - PENDING | SENT | CANCELED
+- Index: (phoneNumberId, createdAt)
+
+### Other WhatsApp Models
+- business_profiles, niches, niche_templates
 - knowledge_sources, faq_items, products_services, policies, conversations
 
 ## API Endpoints
@@ -162,9 +186,16 @@ A minimal Express TypeScript API server with WhatsApp webhook integration, multi
 
 ### WhatsApp Endpoints
 - `POST /api/whatsapp/connect` - Save/update connection
-- `GET /api/whatsapp/connections` - List connections
+- `GET /api/whatsapp/connections` - List connections (includes enabled, mode, pausedUntil, lastInboundAt, lastOutboundAt)
+- `GET /api/whatsapp/connections/:phoneNumberId` - Get single connection
+- `PATCH /api/whatsapp/connections/:phoneNumberId` - Toggle connection (enabled, mode: OFF|REVIEW|AUTO, pausedUntil)
+- `GET /api/whatsapp/status/:phoneNumberId` - Get connection status summary
+- `GET /api/whatsapp/messages?phoneNumberId=...&limit=50&cursor=...` - List messages with pagination
+- `GET /api/whatsapp/drafts?phoneNumberId=...&status=PENDING` - List drafts
+- `POST /api/whatsapp/drafts` - Create draft (phoneNumberId, toNumber, text, inboundMsgId?, createdBy?)
+- `POST /api/whatsapp/drafts/:id/send` - Send draft via WhatsApp API
 - `GET /webhooks/whatsapp` - Webhook verification
-- `POST /webhooks/whatsapp` - Receive messages, AI response
+- `POST /webhooks/whatsapp` - Receive messages (logs all, respects enabled/mode/pausedUntil for auto-reply)
 
 ### WhatsApp Business Profile (requires X-Phone-Number-Id header)
 - `GET/PUT /api/business/profile`

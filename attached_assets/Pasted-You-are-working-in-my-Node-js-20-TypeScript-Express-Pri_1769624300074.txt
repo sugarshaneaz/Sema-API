@@ -1,0 +1,153 @@
+You are working in my Node.js 20 + TypeScript + Express + Prisma + PostgreSQL backend (Replit deployment). We already have WhatsApp Connections stored in Postgres and webhooks wired.
+
+Goal: Implement an in-app “toggle on/off” + modes (OFF/REVIEW/AUTO) for each WhatsApp phone number, and build the backend foundation for an admin inbox to view incoming messages, drafts, and send manual replies.
+
+IMPORTANT RULES
+- Do NOT remove existing endpoints; extend them.
+- All secrets stay in backend only.
+- Webhook must ALWAYS return 200 quickly (even if disabled), unless verification handshake requires a specific response.
+- Log safely (never log tokens).
+- Use Prisma migrations properly for production: migrate deploy for deploy environments.
+- Ensure the published deployment uses process.env.PORT correctly (already does).
+
+DATA MODEL CHANGES (Prisma)
+1) Extend the existing WhatsappConnection model (mapped to whatsapp_connections) to include:
+   - enabled          Boolean   @default(true)
+   - mode             String    @default("REVIEW")  // allowed: "OFF" | "REVIEW" | "AUTO"
+   - pausedUntil      DateTime? // optional pause window
+   - lastInboundAt    DateTime?
+   - lastOutboundAt   DateTime?
+
+2) Create a new model for message logs:
+Model name: WhatsappMessage
+Table: whatsapp_messages (use @@map)
+Fields:
+   - id                String   @id @default(uuid())
+   - phoneNumberId     String
+   - direction         String   // "IN" | "OUT"
+   - fromNumber        String?
+   - toNumber          String?
+   - waMessageId       String?  // Meta message id
+   - text              String?
+   - rawPayload        Json?
+   - status            String   @default("RECEIVED") // RECEIVED | DRAFT | SENT | FAILED
+   - createdAt         DateTime @default(now())
+   - updatedAt         DateTime @updatedAt
+
+Indexes:
+   - @@index([phoneNumberId, createdAt])
+   - @@index([waMessageId])
+
+3) Create a new model for review/drafts:
+Model name: WhatsappDraft
+Table: whatsapp_drafts (use @@map)
+Fields:
+   - id            String   @id @default(uuid())
+   - phoneNumberId String
+   - inboundMsgId  String?  // references WhatsappMessage.id (no strict FK required if you prefer)
+   - toNumber      String
+   - text          String
+   - createdBy     String?  // user/admin id (string for now)
+   - status        String   @default("PENDING") // PENDING | SENT | CANCELED
+   - createdAt     DateTime @default(now())
+   - updatedAt     DateTime @updatedAt
+Indexes:
+   - @@index([phoneNumberId, createdAt])
+
+MIGRATION
+- Create a migration for these schema changes and ensure Prisma Client is regenerated.
+- Add/adjust deployment scripts so production uses:
+  - prisma generate
+  - prisma migrate deploy
+
+API CHANGES / NEW ENDPOINTS
+A) Connection status + toggle
+1) PATCH /api/whatsapp/connections/:phoneNumberId
+Body can include:
+  { enabled?: boolean, mode?: "OFF"|"REVIEW"|"AUTO", pausedUntil?: string|null }
+Behavior:
+  - Validate mode if present
+  - If enabled=false, set mode="OFF" automatically (unless mode explicitly provided)
+  - If enabled=true and mode omitted, keep current mode or default to "REVIEW"
+Return masked accessToken as existing patterns.
+
+2) GET /api/whatsapp/connections/:phoneNumberId
+Return the connection + status fields (token masked).
+
+B) Admin inbox / messages
+3) GET /api/whatsapp/messages?phoneNumberId=...&limit=50&cursor=...
+Return most recent messages for that phoneNumberId, newest first, with pagination cursor.
+Do not return raw access tokens.
+
+4) POST /api/whatsapp/drafts
+Create a draft response (for REVIEW mode):
+Body:
+  { phoneNumberId, toNumber, text, inboundMsgId?: string, createdBy?: string }
+Returns the draft.
+
+5) GET /api/whatsapp/drafts?phoneNumberId=...&status=PENDING
+Return drafts.
+
+6) POST /api/whatsapp/drafts/:id/send
+- Loads draft + connection
+- Sends message using WhatsApp Cloud API Graph endpoint:
+  POST https://graph.facebook.com/v20.0/{phone_number_id}/messages
+  Authorization: Bearer {access_token}
+  JSON body: { messaging_product:"whatsapp", to: toNumber, type:"text", text:{ body:text } }
+- On success: mark draft SENT, insert WhatsappMessage OUT with status SENT
+- On failure: mark FAILED and keep error safely in logs
+
+C) Webhook behavior (core feature)
+Update GET/POST /webhooks/whatsapp handlers:
+
+On POST inbound message:
+1) Extract phone_number_id from webhook payload metadata (as already done)
+2) Lookup connection by phoneNumberId in DB
+3) Always insert inbound WhatsappMessage (direction="IN", status="RECEIVED", rawPayload saved)
+4) If connection not found: log “No connection for phoneNumberId” and return 200
+5) If connection exists:
+   - If enabled=false OR mode="OFF" OR pausedUntil in future:
+       - log “Connection disabled, ignoring” and return 200
+   - If mode="REVIEW":
+       - create a WhatsappDraft automatically as a placeholder OPTIONAL:
+           - either create draft with empty text (or skip auto draft creation)
+       - return 200 (no auto-send)
+   - If mode="AUTO":
+       - For now: implement a simple auto-reply:
+           - reply text: "Thanks! We received your message. A team member will reply shortly."
+       - send via Graph API
+       - Insert outbound WhatsappMessage (direction="OUT")
+       - update lastOutboundAt
+
+Webhook GET verification:
+- Keep existing verify token logic.
+- Ensure it reads WEBHOOK_VERIFY_TOKEN from env.
+- Return correct challenge response.
+
+SECURITY / LOGGING
+- Never log access_token.
+- Mask tokens in all responses.
+- Add a small helper maskToken(t) => "***masked***" + last 4 (optional)
+
+HEALTH/DEBUG
+- Add GET /api/whatsapp/status/:phoneNumberId returning:
+  { exists, enabled, mode, pausedUntil, lastInboundAt, lastOutboundAt }
+- Keep /api/health working.
+
+TEST PLAN (must include)
+After implementing:
+1) Run prisma migrate dev locally; prisma generate
+2) curl GET /api/whatsapp/connections
+3) PATCH toggle enabled=false and confirm webhook ignores auto sends
+4) Insert test inbound webhook payload using curl and verify:
+   - message saved in whatsapp_messages
+   - behavior differs for OFF/REVIEW/AUTO
+5) Send a draft and verify outbound stored
+
+DELIVERABLES
+- Updated Prisma schema + migrations
+- Updated routes/controllers
+- Updated webhook handler
+- New endpoints for messages/drafts/toggle
+- Clear comments in code
+- Make sure TypeScript builds (tsc) and server starts
