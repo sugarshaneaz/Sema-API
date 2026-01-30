@@ -193,6 +193,36 @@ export async function scrapeWebsite(url: string): Promise<ScrapeResult> {
       const $ = cheerio.load(html);
       const bodyText = $("body").text().replace(/\s+/g, " ").trim().slice(0, 15000);
       
+      // Check if this is a JavaScript-rendered SPA (React, Vue, etc.)
+      const hasJsFramework = html.includes('id="root"') || 
+                             html.includes('id="app"') || 
+                             html.includes('id="__next"') ||
+                             html.includes('ng-app') ||
+                             $("script[src*='chunk']").length > 0 ||
+                             $("script[src*='bundle']").length > 0;
+      
+      // Try to get meta description as fallback
+      const metaDesc = $('meta[name="description"]').attr("content") || 
+                       $('meta[property="og:description"]').attr("content") || "";
+      const metaTitle = $('meta[property="og:title"]').attr("content") || 
+                        $('meta[name="title"]').attr("content") || title;
+      
+      if (bodyText.length < 50 && hasJsFramework) {
+        // If we have meta description, use that
+        if (metaDesc && metaDesc.length > 20) {
+          return {
+            success: true,
+            content: `Website Description: ${metaDesc}`,
+            title: metaTitle || "Untitled",
+            url: finalUrl,
+          };
+        }
+        return { 
+          success: false, 
+          error: "This website uses JavaScript to load content. Please enter your business information manually instead." 
+        };
+      }
+      
       if (bodyText.length < 50) {
         return { success: false, error: "No text content found on page" };
       }
