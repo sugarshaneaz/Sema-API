@@ -124,11 +124,20 @@ async function fetchWithRetry(url: string, retries = 2): Promise<Response> {
 }
 
 export async function scrapeWebsite(url: string): Promise<ScrapeResult> {
+  // Auto-add https:// if no protocol provided
+  let normalizedUrl = url.trim();
+  if (!normalizedUrl.match(/^https?:\/\//i)) {
+    normalizedUrl = `https://${normalizedUrl}`;
+  }
+
   try {
-    new URL(url);
+    new URL(normalizedUrl);
   } catch {
     return { success: false, error: "Invalid URL format" };
   }
+
+  // Use normalizedUrl for the rest of the function
+  url = normalizedUrl;
 
   try {
     let response: Response;
