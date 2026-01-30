@@ -20,6 +20,7 @@ import { processFile, isValidFileType } from "./services/fileProcessor";
 import { ObjectStorageService } from "./integrations/object_storage";
 import * as cheerio from "cheerio";
 import OpenAI from "openai";
+import { scrapeWebsite } from "./services/webScraper";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -2109,7 +2110,7 @@ app.post("/api/admin/scrape-website", requireAdminAuth as any, async (req: Authe
     
     if (rateLimit && now < rateLimit.resetAt) {
       if (rateLimit.count >= 5) {
-        res.status(429).json({ success: false, message: "Rate limit exceeded. Max 5 requests per minute." });
+        res.status(429).json({ success: false, error: "Rate limit exceeded. Max 5 requests per minute." });
         return;
       }
       rateLimit.count++;
@@ -2120,65 +2121,17 @@ app.post("/api/admin/scrape-website", requireAdminAuth as any, async (req: Authe
     const { url } = req.body;
 
     if (!url || typeof url !== "string") {
-      res.status(400).json({ success: false, message: "url is required" });
+      res.status(400).json({ success: false, error: "url is required" });
       return;
     }
 
-    try {
-      new URL(url);
-    } catch {
-      res.status(400).json({ success: false, message: "Invalid URL format" });
-      return;
-    }
+    const scrapeResult = await scrapeWebsite(url);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    let html: string;
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; SemaBot/1.0; +https://sema.app)",
-          "Accept": "text/html,application/xhtml+xml",
-        },
+    if (!scrapeResult.success) {
+      res.status(400).json({ 
+        success: false, 
+        error: scrapeResult.error || "Failed to scrape website" 
       });
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        res.status(400).json({ success: false, message: `Failed to fetch website: HTTP ${response.status}` });
-        return;
-      }
-
-      html = await response.text();
-    } catch (fetchError: any) {
-      clearTimeout(timeout);
-      if (fetchError.name === "AbortError") {
-        res.status(408).json({ success: false, message: "Request timeout - website took too long to respond" });
-        return;
-      }
-      res.status(400).json({ success: false, message: `Failed to fetch website: ${fetchError.message}` });
-      return;
-    }
-
-    const $ = cheerio.load(html);
-    $("script, style, nav, header, footer, iframe, noscript, svg, meta, link").remove();
-
-    const textParts: string[] = [];
-    const title = $("title").text().trim();
-    if (title) textParts.push(`Page Title: ${title}`);
-
-    $("h1, h2, h3, p, li, td, th, span, div, article, section, main").each((_, el) => {
-      const text = $(el).clone().children().remove().end().text().trim();
-      if (text && text.length > 10) {
-        textParts.push(text);
-      }
-    });
-
-    let extractedText = textParts.join("\n").slice(0, 10000);
-
-    if (!extractedText || extractedText.length < 50) {
-      res.status(400).json({ success: false, message: "Could not extract meaningful content from the website" });
       return;
     }
 
@@ -2194,7 +2147,7 @@ app.post("/api/admin/scrape-website", requireAdminAuth as any, async (req: Authe
 Only include sections where you found relevant information. Be concise but complete.
 
 Website content:
-${extractedText}`;
+${scrapeResult.content}`;
 
     const aiResponse = await scraperOpenAI.chat.completions.create({
       model: "gpt-4o-mini",
@@ -2206,16 +2159,18 @@ ${extractedText}`;
       temperature: 0.3,
     });
 
-    const summarizedContent = aiResponse.choices[0]?.message?.content || extractedText;
+    const summarizedContent = aiResponse.choices[0]?.message?.content || scrapeResult.content;
 
     res.json({
       success: true,
       content: summarizedContent,
+      title: scrapeResult.title,
+      url: scrapeResult.url,
     });
   } catch (error) {
     console.error("Error scraping website:", error);
     const message = error instanceof Error ? error.message : "Failed to scrape website";
-    res.status(500).json({ success: false, message });
+    res.status(500).json({ success: false, error: message });
   }
 });
 
@@ -2225,14 +2180,7 @@ app.post("/api/admin/businesses/:id/scrape-website", requireAdminAuth as any, as
     const { url } = req.body;
 
     if (!url || typeof url !== "string") {
-      res.status(400).json({ error: "url is required" });
-      return;
-    }
-
-    try {
-      new URL(url);
-    } catch {
-      res.status(400).json({ error: "Invalid URL format" });
+      res.status(400).json({ success: false, error: "url is required" });
       return;
     }
 
@@ -2241,60 +2189,17 @@ app.post("/api/admin/businesses/:id/scrape-website", requireAdminAuth as any, as
     });
 
     if (!business) {
-      res.status(404).json({ error: "Business not found" });
+      res.status(404).json({ success: false, error: "Business not found" });
       return;
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const scrapeResult = await scrapeWebsite(url);
 
-    let html: string;
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; SemaBot/1.0; +https://sema.app)",
-          "Accept": "text/html,application/xhtml+xml",
-        },
+    if (!scrapeResult.success) {
+      res.status(400).json({ 
+        success: false, 
+        error: scrapeResult.error || "Failed to scrape website" 
       });
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        res.status(400).json({ error: `Failed to fetch website: HTTP ${response.status}` });
-        return;
-      }
-
-      html = await response.text();
-    } catch (fetchError: any) {
-      clearTimeout(timeout);
-      if (fetchError.name === "AbortError") {
-        res.status(408).json({ error: "Request timeout - website took too long to respond" });
-        return;
-      }
-      res.status(400).json({ error: `Failed to fetch website: ${fetchError.message}` });
-      return;
-    }
-
-    const $ = cheerio.load(html);
-
-    $("script, style, nav, header, footer, iframe, noscript, svg, meta, link").remove();
-
-    const textParts: string[] = [];
-    
-    const title = $("title").text().trim();
-    if (title) textParts.push(`Page Title: ${title}`);
-
-    $("h1, h2, h3, p, li, td, th, span, div, article, section, main").each((_, el) => {
-      const text = $(el).clone().children().remove().end().text().trim();
-      if (text && text.length > 10) {
-        textParts.push(text);
-      }
-    });
-
-    let extractedText = textParts.join("\n").slice(0, 10000);
-
-    if (!extractedText || extractedText.length < 50) {
-      res.status(400).json({ error: "Could not extract meaningful content from the website" });
       return;
     }
 
@@ -2314,7 +2219,7 @@ Analyze the following website content and extract relevant business information.
 Only include sections where you found relevant information. Be concise but complete.
 
 Website content:
-${extractedText}`;
+${scrapeResult.content}`;
 
     const aiResponse = await scraperOpenAI.chat.completions.create({
       model: "gpt-4o-mini",
@@ -2326,12 +2231,12 @@ ${extractedText}`;
       temperature: 0.3,
     });
 
-    const summarizedContent = aiResponse.choices[0]?.message?.content || extractedText;
+    const summarizedContent = aiResponse.choices[0]?.message?.content || scrapeResult.content;
 
     const existingKnowledge = (business.settings as any)?.knowledgeBase || "";
     const updatedKnowledge = existingKnowledge
-      ? `${existingKnowledge}\n\n---\n\n[Scraped from ${url}]\n${summarizedContent}`
-      : `[Scraped from ${url}]\n${summarizedContent}`;
+      ? `${existingKnowledge}\n\n---\n\n[Scraped from ${scrapeResult.url}]\n${summarizedContent}`
+      : `[Scraped from ${scrapeResult.url}]\n${summarizedContent}`;
 
     await prisma.business.update({
       where: { id },
@@ -2346,11 +2251,13 @@ ${extractedText}`;
     res.json({
       success: true,
       content: summarizedContent,
+      title: scrapeResult.title,
+      url: scrapeResult.url,
     });
   } catch (error) {
     console.error("Error scraping website:", error);
     const message = error instanceof Error ? error.message : "Failed to scrape website";
-    res.status(500).json({ error: message });
+    res.status(500).json({ success: false, error: message });
   }
 });
 
