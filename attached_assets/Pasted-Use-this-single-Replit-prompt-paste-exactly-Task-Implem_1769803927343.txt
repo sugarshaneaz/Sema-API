@@ -1,0 +1,33 @@
+Use this **single Replit prompt** (paste exactly):
+
+> **Task:** Implement a JS-rendering website scraper in the **Sema-API (Express + TypeScript)** backend using **Playwright (Chromium)**, replacing the current raw `fetch(url).text()` approach that fails on React/Vite sites.
+>
+> **Requirements:**
+>
+> 1. Add Playwright dependency and ensure Chromium is installed on deploy.
+>
+>    * `npm i playwright`
+>    * Add `"postinstall": "playwright install chromium"` to `package.json` scripts.
+> 2. Create a new module `server/scraper.ts` (or `src/scraper.ts` if that’s the project pattern) exporting `scrapeWithBrowser(url: string)` that:
+>
+>    * Validates `url` is http/https using `new URL(url)`
+>    * Launches Playwright `chromium` in headless mode with args `["--no-sandbox","--disable-setuid-sandbox"]`
+>    * `page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 })` then `page.waitForLoadState("networkidle", { timeout: 45000 })` then `waitForTimeout(1200)`
+>    * Extracts: `title` via `page.title()`, `html` via `page.content()`, and visible `text` via `document.body.innerText`
+>    * Returns `{ url, title, text, html }` (trim text)
+>    * Always closes the browser in `finally`
+> 3. Add a new endpoint **POST `/api/scrape-website`** in the existing routes file (keep consistent style with the project):
+>
+>    * Accept JSON body `{ "url": "https://..." }`
+>    * Return `{ ok:true, url, title, text, html }`
+>    * Add size guards: limit `text` to 40,000 chars and `html` to 200,000 chars
+>    * Return 400 for missing/invalid url, 500 with `{ ok:false, error }` on failure
+> 4. Add a quick sanity endpoint **GET `/api/scrape-website/ping`** returning `{ ok:true }` so I can confirm deploy works.
+> 5. Do NOT touch auth, Prisma, DB, or WhatsApp logic. Keep changes isolated to scraper + routes + package.json.
+> 6. After implementation, output:
+>
+>    * The exact files changed
+>    * The curl command I can run to test on a JS site
+>    * Any Replit-specific notes if Playwright needs extra setup
+>
+> **Goal:** The scraper must successfully return content from JS-rendered sites (React/Vite) by rendering the page in Chromium, not just downloading HTML.

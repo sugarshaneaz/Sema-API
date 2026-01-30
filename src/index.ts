@@ -21,6 +21,7 @@ import { ObjectStorageService } from "./integrations/object_storage";
 import * as cheerio from "cheerio";
 import OpenAI from "openai";
 import { scrapeWebsite } from "./services/webScraper";
+import { scrapeWithBrowser } from "./services/browserScraper";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -58,6 +59,34 @@ app.get("/api/health", (_req: Request, res: Response) => {
 
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ ok: true, service: "sema-api" });
+});
+
+// Browser-based scraper endpoints (handles JS-rendered sites)
+app.get("/api/scrape-website/ping", (_req: Request, res: Response) => {
+  res.json({ ok: true });
+});
+
+app.post("/api/scrape-website", async (req: Request, res: Response) => {
+  try {
+    const { url } = req.body;
+
+    if (!url || typeof url !== "string") {
+      res.status(400).json({ ok: false, error: "Missing or invalid 'url' in request body" });
+      return;
+    }
+
+    const result = await scrapeWithBrowser(url);
+
+    if (!result.ok) {
+      res.status(500).json(result);
+      return;
+    }
+
+    res.json(result);
+  } catch (error: any) {
+    console.error("Browser scrape endpoint error:", error.message);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 app.get("/api/debug/env", (_req: Request, res: Response) => {
