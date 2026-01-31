@@ -2154,9 +2154,10 @@ app.post("/api/admin/scrape-website", requireAdminAuth as any, async (req: Authe
       return;
     }
 
-    const scrapeResult = await scrapeWebsite(url);
+    // Use browser-based scraper for JS-rendered sites
+    const scrapeResult = await scrapeWithBrowser(url);
 
-    if (!scrapeResult.success) {
+    if (!scrapeResult.ok) {
       res.status(400).json({ 
         success: false, 
         error: scrapeResult.error || "Failed to scrape website" 
@@ -2176,7 +2177,7 @@ app.post("/api/admin/scrape-website", requireAdminAuth as any, async (req: Authe
 Only include sections where you found relevant information. Be concise but complete.
 
 Website content:
-${scrapeResult.content}`;
+${scrapeResult.text}`;
 
     const aiResponse = await scraperOpenAI.chat.completions.create({
       model: "gpt-4o-mini",
@@ -2188,12 +2189,12 @@ ${scrapeResult.content}`;
       temperature: 0.3,
     });
 
-    const summarizedContent = aiResponse.choices[0]?.message?.content || scrapeResult.content;
+    const summarizedContent = aiResponse.choices[0]?.message?.content || scrapeResult.text;
 
     res.json({
       success: true,
       content: summarizedContent,
-      title: scrapeResult.title,
+      title: scrapeResult.title || "",
       url: scrapeResult.url,
     });
   } catch (error) {
@@ -2222,9 +2223,10 @@ app.post("/api/admin/businesses/:id/scrape-website", requireAdminAuth as any, as
       return;
     }
 
-    const scrapeResult = await scrapeWebsite(url);
+    // Use browser-based scraper for JS-rendered sites
+    const scrapeResult = await scrapeWithBrowser(url);
 
-    if (!scrapeResult.success) {
+    if (!scrapeResult.ok) {
       res.status(400).json({ 
         success: false, 
         error: scrapeResult.error || "Failed to scrape website" 
@@ -2248,7 +2250,7 @@ Analyze the following website content and extract relevant business information.
 Only include sections where you found relevant information. Be concise but complete.
 
 Website content:
-${scrapeResult.content}`;
+${scrapeResult.text}`;
 
     const aiResponse = await scraperOpenAI.chat.completions.create({
       model: "gpt-4o-mini",
@@ -2260,7 +2262,7 @@ ${scrapeResult.content}`;
       temperature: 0.3,
     });
 
-    const summarizedContent = aiResponse.choices[0]?.message?.content || scrapeResult.content;
+    const summarizedContent = aiResponse.choices[0]?.message?.content || scrapeResult.text;
 
     const existingKnowledge = (business.settings as any)?.knowledgeBase || "";
     const updatedKnowledge = existingKnowledge
@@ -2280,7 +2282,7 @@ ${scrapeResult.content}`;
     res.json({
       success: true,
       content: summarizedContent,
-      title: scrapeResult.title,
+      title: scrapeResult.title || "",
       url: scrapeResult.url,
     });
   } catch (error) {
