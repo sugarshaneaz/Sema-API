@@ -1,0 +1,56 @@
+GOAL: Fix production “Not Found” (even for /api/health) by ensuring the deployed backend runs the latest code and is reachable on Replit, and implement/confirm the Playwright JS-rendering scraper endpoints.
+
+Do NOT change Prisma schema or WhatsApp logic except where needed to add the scraper endpoints.
+
+Step-by-step tasks:
+
+Fix the server listen for Replit Deployments in the real entry file (src/index.ts or wherever app.listen is):
+
+Must listen on process.env.PORT and host 0.0.0.0:
+const PORT = Number(process.env.PORT) || 5000; app.listen(PORT, "0.0.0.0", ...)
+
+Add startup logs printing PORT, NODE_ENV, and the deployment base URL if present.
+
+Ensure the deployed process runs compiled output, not stale dev code:
+
+In package.json, ensure scripts exist:
+
+"build": "tsc" (or the project’s build)
+
+"start": "node dist/index.js" (or dist/index.cjs depending on output)
+
+"dev": "tsx src/index.ts" (optional)
+
+Ensure the deployment “Run command” uses npm start.
+
+Health + ping endpoints (required):
+
+GET /api/health → { "status":"ok", "timestamp": "<iso>" }
+
+GET /api/scrape-website/ping → { "ok": true }
+
+Playwright scraper implementation (JS-rendered sites):
+
+Add dependency playwright and install Chromium on deploy by adding to package.json: "postinstall": "playwright install chromium"
+
+Create src/services/browserScraper.ts exporting scrapeWithBrowser(url: string) using Playwright Chromium headless with args ["--no-sandbox","--disable-setuid-sandbox"], timeout 45s, wait for networkidle + 1200ms, extract title, html via page.content(), and visible text via document.body.innerText. Always close() browser in finally.
+
+Endpoints for scraping:
+
+Public: POST /api/scrape-website body { url } returns { ok:true, url, title, text, html } with size caps (text 40k chars, html 200k chars). 400 on bad input, 500 on error.
+
+Admin (Bearer auth): POST /api/admin/scrape-website returns { success:true, content:"..." } where content is the cleaned/structured summary derived from scraped text (simple transform is fine if AI isn’t wired here).
+
+Business-specific (Bearer auth + business id): POST /api/admin/businesses/:id/scrape-website returns { success:true, businessId:id, content:"..." }. If business lookup exists in project, validate business id; otherwise just echo id and proceed.
+
+Verify routes are actually registered in the main router used by production (no duplicate Express apps).
+
+Output at the end:
+
+Exact files changed
+
+Exact Deployment build/run commands to use
+
+curl commands to test on production URL: /api/health, /api/scrape-website/ping, and a POST to /api/scrape-website with a JS site.
+
+Acceptance test: After deploying, curl https://<PROD_URL>/api/health must return JSON (not “Not Found”).

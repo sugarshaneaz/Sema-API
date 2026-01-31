@@ -3081,5 +3081,9 @@ app.get("/v1/business/:id/translation-usage", requireAdminAuth as any, async (re
 });
 
 app.listen(port, "0.0.0.0", () => {
-  console.log(`sema-api listening on port ${port}`);
+  console.log(`=== sema-api started ===`);
+  console.log(`PORT: ${port}`);
+  console.log(`NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`DATABASE_URL: ${process.env.DATABASE_URL ? 'configured' : 'missing'}`);
+  console.log(`Listening on 0.0.0.0:${port}`);
 });
