@@ -21,12 +21,20 @@ import { ObjectStorageService } from "./integrations/object_storage";
 import * as cheerio from "cheerio";
 import OpenAI from "openai";
 import { scrapeWebsite } from "./services/webScraper";
-import { scrapeWithBrowser } from "./services/browserScraper";
+import { scrapeWithBrowser, checkPlaywrightInstallation } from "./services/browserScraper";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
 
 console.log(`DATABASE_URL configured: ${!!process.env.DATABASE_URL}`);
+
+// Check Playwright installation on startup
+const playwrightCheck = checkPlaywrightInstallation();
+console.log(`Playwright Chromium installed: ${playwrightCheck.installed}`);
+console.log(`Playwright executable path: ${playwrightCheck.executablePath || 'N/A'}`);
+if (!playwrightCheck.installed) {
+  console.error(`Playwright installation error: ${playwrightCheck.error}`);
+}
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -78,14 +86,16 @@ app.post("/api/scrape-website", async (req: Request, res: Response) => {
     const result = await scrapeWithBrowser(url);
 
     if (!result.ok) {
-      res.status(500).json(result);
+      // Use 500 for server errors (browser not installed), 400 for client errors (bad URL)
+      const statusCode = result.isServerError ? 500 : 400;
+      res.status(statusCode).json(result);
       return;
     }
 
     res.json(result);
   } catch (error: any) {
     console.error("Browser scrape endpoint error:", error.message);
-    res.status(500).json({ ok: false, error: error.message });
+    res.status(500).json({ ok: false, error: error.message, isServerError: true });
   }
 });
 

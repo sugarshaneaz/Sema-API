@@ -1,4 +1,5 @@
 import { chromium, Browser, Page } from "playwright";
+import * as fs from "fs";
 
 export interface BrowserScrapeResult {
   ok: boolean;
@@ -7,10 +8,30 @@ export interface BrowserScrapeResult {
   text?: string;
   html?: string;
   error?: string;
+  isServerError?: boolean; // True for 500-level errors (like missing browser)
 }
 
 const MAX_TEXT_LENGTH = 40000;
 const MAX_HTML_LENGTH = 200000;
+
+// Check if Playwright Chromium is installed and return path info
+export function checkPlaywrightInstallation(): { installed: boolean; executablePath: string | null; error?: string } {
+  try {
+    const execPath = chromium.executablePath();
+    const exists = fs.existsSync(execPath);
+    return {
+      installed: exists,
+      executablePath: execPath,
+      error: exists ? undefined : `Executable not found at: ${execPath}`
+    };
+  } catch (err: any) {
+    return {
+      installed: false,
+      executablePath: null,
+      error: err.message
+    };
+  }
+}
 
 export async function scrapeWithBrowser(url: string): Promise<BrowserScrapeResult> {
   // Validate URL
@@ -66,6 +87,18 @@ export async function scrapeWithBrowser(url: string): Promise<BrowserScrapeResul
   } catch (error: any) {
     console.error("Browser scraping error:", error.message);
     
+    // Server-side errors (500) - browser not installed or launch failed
+    if (error.message?.includes("Executable doesn't exist") || 
+        error.message?.includes("browserType.launch") ||
+        error.message?.includes("Failed to launch")) {
+      return { 
+        ok: false, 
+        error: `Browser launch failed: ${error.message}`,
+        isServerError: true 
+      };
+    }
+    
+    // Client errors (400) - bad URL or network issues
     if (error.message?.includes("Timeout")) {
       return { ok: false, error: "Page took too long to load" };
     }
