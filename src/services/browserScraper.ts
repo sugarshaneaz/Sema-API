@@ -24,25 +24,28 @@ let activePlaywrightCount = 0;
 const MAX_CONCURRENT_PLAYWRIGHT = 2;
 const playwrightQueue: Array<{ resolve: () => void }> = [];
 
-async function acquirePlaywrightSlot(): Promise<void> {
+async function acquirePlaywrightSlot(): Promise<{ release: () => void }> {
+  const release = () => {
+    activePlaywrightCount = Math.max(0, activePlaywrightCount - 1);
+    if (playwrightQueue.length > 0 && activePlaywrightCount < MAX_CONCURRENT_PLAYWRIGHT) {
+      const next = playwrightQueue.shift();
+      if (next) {
+        activePlaywrightCount++;
+        next.resolve();
+      }
+    }
+  };
+
   if (activePlaywrightCount < MAX_CONCURRENT_PLAYWRIGHT) {
     activePlaywrightCount++;
-    return;
+    return { release };
   }
-  return new Promise<void>((resolve) => {
+  
+  await new Promise<void>((resolve) => {
     playwrightQueue.push({ resolve });
   });
-}
-
-function releasePlaywrightSlot(): void {
-  activePlaywrightCount--;
-  if (playwrightQueue.length > 0 && activePlaywrightCount < MAX_CONCURRENT_PLAYWRIGHT) {
-    const next = playwrightQueue.shift();
-    if (next) {
-      activePlaywrightCount++;
-      next.resolve();
-    }
-  }
+  activePlaywrightCount++;
+  return { release };
 }
 
 export function checkPlaywrightInstallation(): { installed: boolean; executablePath: string | null; error?: string } {
@@ -149,7 +152,7 @@ async function scrapeWithFetch(url: string): Promise<ScrapeResult & { html: stri
 }
 
 async function scrapeWithPlaywright(url: string): Promise<ScrapeResult> {
-  await acquirePlaywrightSlot();
+  const slot = await acquirePlaywrightSlot();
   
   let browser: Browser | null = null;
 
@@ -226,7 +229,7 @@ async function scrapeWithPlaywright(url: string): Promise<ScrapeResult> {
     if (browser) {
       await browser.close().catch(() => {});
     }
-    releasePlaywrightSlot();
+    slot.release();
   }
 }
 
