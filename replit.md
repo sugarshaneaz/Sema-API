@@ -123,6 +123,17 @@ A minimal Express TypeScript API server with WhatsApp webhook integration, multi
 - `createdBy` (nullable), `status` (default "PENDING") - PENDING | SENT | CANCELED
 - Index: (phoneNumberId, createdAt)
 
+### whatsapp_webhook_events (Webhook Black Box)
+- `id` (UUID, primary key)
+- `createdAt` (DateTime)
+- `method` (String) - GET or POST
+- `headersJson` (JSON, nullable)
+- `queryJson` (JSON, nullable)
+- `bodyJson` (JSON, nullable)
+- `rawBody` (String, nullable)
+- `note` (String, nullable) - VERIFY_SUCCESS, VERIFY_FAILED, EVENT_RECEIVED
+- Index: (createdAt)
+
 ### Other WhatsApp Models
 - business_profiles, niches, niche_templates
 - knowledge_sources, faq_items, products_services, policies, conversations
@@ -194,8 +205,11 @@ A minimal Express TypeScript API server with WhatsApp webhook integration, multi
 - `GET /api/whatsapp/drafts?phoneNumberId=...&status=PENDING` - List drafts
 - `POST /api/whatsapp/drafts` - Create draft (phoneNumberId, toNumber, text, inboundMsgId?, createdBy?)
 - `POST /api/whatsapp/drafts/:id/send` - Send draft via WhatsApp API
-- `GET /webhooks/whatsapp` - Webhook verification
-- `POST /webhooks/whatsapp` - Receive messages (logs all, respects enabled/mode/pausedUntil for auto-reply)
+- `GET /webhooks/whatsapp` - Webhook verification (logs to webhook_events)
+- `POST /webhooks/whatsapp` - Receive messages (logs to webhook_events, respects enabled/mode/pausedUntil for auto-reply)
+- `GET /api/whatsapp/webhook` - Alternative webhook verification (logs to webhook_events)
+- `POST /api/whatsapp/webhook` - Alternative webhook event receiver (logs to webhook_events)
+- `GET /api/debug/whatsapp/webhook-events?key=DEBUG_KEY&limit=50` - View recent webhook events (protected by DEBUG_KEY secret)
 
 ### WhatsApp Business Profile (requires X-Phone-Number-Id header)
 - `GET/PUT /api/business/profile`
