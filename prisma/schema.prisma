@@ -59,6 +59,20 @@ model WhatsappDraft {
   @@map("whatsapp_drafts")
 }
 
+model WhatsappWebhookEvent {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  method      String
+  headersJson Json?
+  queryJson   Json?
+  bodyJson    Json?
+  rawBody     String?
+  note        String?
+
+  @@index([createdAt])
+  @@map("whatsapp_webhook_events")
+}
+
 model Niche {
   id        String   @id
   label     String
