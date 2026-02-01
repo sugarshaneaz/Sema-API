@@ -510,12 +510,164 @@ app.post("/api/whatsapp/drafts/:id/send", async (req: Request, res: Response) =>
   }
 });
 
-app.get("/webhooks/whatsapp", (req: Request, res: Response) => {
+// ============================================
+// Webhook Black Box - logs ALL webhook events
+// ============================================
+
+// Helper function to log webhook event to database
+async function logWebhookEvent(
+  method: string,
+  headers: Record<string, any>,
+  query: Record<string, any>,
+  body: any,
+  rawBody: string | null,
+  note: string | null
+) {
+  try {
+    await prisma.whatsappWebhookEvent.create({
+      data: {
+        method,
+        headersJson: headers,
+        queryJson: query,
+        bodyJson: body || null,
+        rawBody,
+        note,
+      },
+    });
+    console.log(`[Webhook Event] Logged ${method} request`);
+  } catch (err) {
+    console.error("[Webhook Event] Failed to log event:", err);
+  }
+}
+
+// GET /api/whatsapp/webhook - Verification endpoint (alternative to /webhooks/whatsapp)
+app.get("/api/whatsapp/webhook", async (req: Request, res: Response) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-
   const verifyToken = process.env.WEBHOOK_VERIFY_TOKEN;
+
+  // Log the verification attempt first
+  await logWebhookEvent(
+    "GET",
+    req.headers as Record<string, any>,
+    req.query as Record<string, any>,
+    null,
+    null,
+    mode === "subscribe" && token === verifyToken ? "VERIFY_SUCCESS" : "VERIFY_FAILED"
+  );
+
+  if (mode === "subscribe" && token === verifyToken) {
+    console.log("[Webhook] Verification SUCCESS via /api/whatsapp/webhook");
+    res.status(200).send(challenge);
+  } else {
+    console.log("[Webhook] Verification FAILED via /api/whatsapp/webhook");
+    res.status(400).json({ error: "Verification failed" });
+  }
+});
+
+// POST /api/whatsapp/webhook - Event receiver (logs first, then returns 200 immediately)
+app.post("/api/whatsapp/webhook", async (req: Request, res: Response) => {
+  // Log event FIRST before any processing
+  await logWebhookEvent(
+    "POST",
+    req.headers as Record<string, any>,
+    req.query as Record<string, any>,
+    req.body,
+    JSON.stringify(req.body),
+    "EVENT_RECEIVED"
+  );
+
+  // Return 200 immediately (Meta expects quick response)
+  res.sendStatus(200);
+
+  // Process the webhook asynchronously (same as existing /webhooks/whatsapp logic)
+  (async () => {
+    try {
+      const body = req.body;
+      const value = body?.entry?.[0]?.changes?.[0]?.value;
+      const phoneNumberId = value?.metadata?.phone_number_id;
+      const msg = value?.messages?.[0];
+      const waMessageId = msg?.id;
+      const from = msg?.from;
+      const text = msg?.text?.body || "(no text)";
+
+      console.log("[Webhook] Processing event", { phone_number_id: phoneNumberId || null, from: from || null });
+
+      if (!phoneNumberId || !from) {
+        console.log("[Webhook] Missing phoneNumberId or from, skipping processing");
+        return;
+      }
+
+      await prisma.whatsappMessage.create({
+        data: {
+          phoneNumberId,
+          direction: "IN",
+          fromNumber: from,
+          waMessageId: waMessageId || null,
+          text,
+          rawPayload: body,
+          status: "RECEIVED",
+        },
+      });
+
+      console.log("[Webhook] Message stored successfully");
+    } catch (err) {
+      console.error("[Webhook] Error processing event:", err);
+    }
+  })();
+});
+
+// GET /api/debug/whatsapp/webhook-events - View recent webhook events (protected by DEBUG_KEY)
+app.get("/api/debug/whatsapp/webhook-events", async (req: Request, res: Response) => {
+  const debugKey = req.query.key || req.headers["x-debug-key"];
+  const expectedKey = process.env.DEBUG_KEY;
+
+  if (!expectedKey || debugKey !== expectedKey) {
+    res.status(401).json({ error: "Invalid or missing DEBUG_KEY" });
+    return;
+  }
+
+  try {
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const events = await prisma.whatsappWebhookEvent.findMany({
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+
+    res.json({
+      count: events.length,
+      events: events.map((e) => ({
+        id: e.id,
+        createdAt: e.createdAt,
+        method: e.method,
+        note: e.note,
+        query: e.queryJson,
+        body: e.bodyJson,
+        headers: e.headersJson,
+      })),
+    });
+  } catch (err) {
+    console.error("[Debug] Error fetching webhook events:", err);
+    res.status(500).json({ error: "Failed to fetch events" });
+  }
+});
+
+app.get("/webhooks/whatsapp", async (req: Request, res: Response) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+  const verifyToken = process.env.WEBHOOK_VERIFY_TOKEN;
+
+  // Log verification attempt to webhook events table
+  await logWebhookEvent(
+    "GET",
+    req.headers as Record<string, any>,
+    req.query as Record<string, any>,
+    null,
+    null,
+    mode === "subscribe" && token === verifyToken ? "VERIFY_SUCCESS" : "VERIFY_FAILED"
+  );
 
   if (mode === "subscribe" && token === verifyToken) {
     console.log("WhatsApp webhook verified");
@@ -526,9 +678,19 @@ app.get("/webhooks/whatsapp", (req: Request, res: Response) => {
   }
 });
 
-app.post("/webhooks/whatsapp", (req: Request, res: Response) => {
+app.post("/webhooks/whatsapp", async (req: Request, res: Response) => {
   const body = req.body;
   
+  // Log event FIRST before any processing
+  await logWebhookEvent(
+    "POST",
+    req.headers as Record<string, any>,
+    req.query as Record<string, any>,
+    body,
+    JSON.stringify(body),
+    "EVENT_RECEIVED"
+  );
+
   res.sendStatus(200);
 
   (async () => {
