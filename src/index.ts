@@ -21,20 +21,13 @@ import { ObjectStorageService } from "./integrations/object_storage";
 import * as cheerio from "cheerio";
 import OpenAI from "openai";
 import { scrapeWebsite } from "./services/webScraper";
-import { scrapeWebsite as scrapeWithPlaywright, scrapeWithBrowser, checkPlaywrightInstallation } from "./services/browserScraper";
+import { scrapeWebsite as scrapeWithCheerio, scrapeWithBrowser } from "./services/browserScraper";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
 
 console.log(`DATABASE_URL configured: ${!!process.env.DATABASE_URL}`);
-
-// Check Playwright installation on startup
-const playwrightCheck = checkPlaywrightInstallation();
-console.log(`Playwright Chromium installed: ${playwrightCheck.installed}`);
-console.log(`Playwright executable path: ${playwrightCheck.executablePath || 'N/A'}`);
-if (!playwrightCheck.installed) {
-  console.error(`Playwright installation error: ${playwrightCheck.error}`);
-}
+console.log(`Web scraping: Using cheerio (fast HTML parsing)`);
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -83,9 +76,8 @@ app.post("/api/scrape-website", async (req: Request, res: Response) => {
       return;
     }
 
-    // Use hybrid approach: fast fetch first, Playwright if JS shell detected or render=true
-    const forcePlaywright = render === true;
-    const result = await scrapeWithPlaywright(url, forcePlaywright);
+    // Use cheerio-based scraping (render param kept for API compatibility but ignored)
+    const result = await scrapeWithCheerio(url);
 
     if (!result.ok) {
       const statusCode = result.isServerError ? 500 : 400;
