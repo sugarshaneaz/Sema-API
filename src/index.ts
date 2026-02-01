@@ -21,7 +21,7 @@ import { ObjectStorageService } from "./integrations/object_storage";
 import * as cheerio from "cheerio";
 import OpenAI from "openai";
 import { scrapeWebsite } from "./services/webScraper";
-import { scrapeWithBrowser, checkPlaywrightInstallation } from "./services/browserScraper";
+import { scrapeWebsite as scrapeWithPlaywright, scrapeWithBrowser, checkPlaywrightInstallation } from "./services/browserScraper";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -76,17 +76,18 @@ app.get("/api/scrape-website/ping", (_req: Request, res: Response) => {
 
 app.post("/api/scrape-website", async (req: Request, res: Response) => {
   try {
-    const { url } = req.body;
+    const { url, render } = req.body;
 
     if (!url || typeof url !== "string") {
       res.status(400).json({ ok: false, error: "Missing or invalid 'url' in request body" });
       return;
     }
 
-    const result = await scrapeWithBrowser(url);
+    // Use hybrid approach: fast fetch first, Playwright if JS shell detected or render=true
+    const forcePlaywright = render === true;
+    const result = await scrapeWithPlaywright(url, forcePlaywright);
 
     if (!result.ok) {
-      // Use 500 for server errors (browser not installed), 400 for client errors (bad URL)
       const statusCode = result.isServerError ? 500 : 400;
       res.status(statusCode).json(result);
       return;
