@@ -211,6 +211,15 @@ A minimal Express TypeScript API server with WhatsApp webhook integration, multi
 - `POST /api/whatsapp/webhook` - Alternative webhook event receiver (logs to webhook_events)
 - `GET /api/debug/whatsapp/webhook-events?key=DEBUG_KEY&limit=50` - View recent webhook events (protected by DEBUG_KEY secret)
 
+### Payment Endpoints (Selcom)
+- `POST /api/payments/selcom/checkout` - Create payment link with card + M-Pesa options (requires Bearer token)
+  - Body: { businessId, orderId, amount, currency?, buyerEmail?, buyerPhone?, buyerName?, redirectUrl?, cancelUrl?, webhook? }
+  - Response: { success, checkoutUrl, transactionId, reference, paymentMethodsEnabled }
+  - Reads business.settings.payments.methods for enabled payment types (mpesa, card, bank_transfer)
+  - Maps to Selcom: mpesa→USSDPUSH, card→MASTERPASS+CARD, bank_transfer→BANK
+- `GET /api/payments/selcom/status/:orderId?businessId=...` - Check payment status (requires Bearer token)
+- Environment: SELCOM_API_KEY, SELCOM_API_SECRET, SELCOM_VENDOR_ID, SELCOM_BASE_URL
+
 ### WhatsApp Business Profile (requires X-Phone-Number-Id header)
 - `GET/PUT /api/business/profile`
 - `GET/POST/PUT/DELETE /api/knowledge-sources`, `/api/faqs`, `/api/products`, `/api/policies`

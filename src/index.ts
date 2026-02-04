@@ -22,6 +22,7 @@ import * as cheerio from "cheerio";
 import OpenAI from "openai";
 import { scrapeWebsite } from "./services/webScraper";
 import { scrapeWebsite as scrapeWithCheerio, scrapeWithBrowser } from "./services/browserScraper";
+import { createSelcomCheckout, checkSelcomStatus, getBusinessPaymentMethods, SelcomConfig } from "./services/selcom";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -3242,6 +3243,120 @@ app.get("/v1/business/:id/translation-usage", requireAdminAuth as any, async (re
   } catch (error) {
     console.error("Error getting translation usage:", error);
     res.status(500).json({ error: "Failed to get translation usage" });
+  }
+});
+
+// Selcom Payment Endpoints
+app.post("/api/payments/selcom/checkout", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { businessId, orderId, amount, currency, buyerEmail, buyerPhone, buyerName, redirectUrl, cancelUrl, webhook } = req.body;
+
+    if (!businessId || !orderId || !amount) {
+      res.status(400).json({ success: false, error: "businessId, orderId, and amount are required" });
+      return;
+    }
+
+    // Get business to read payment settings
+    const business = await prisma.business.findFirst({
+      where: { id: businessId, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ success: false, error: "Business not found" });
+      return;
+    }
+
+    // Check for Selcom credentials in business settings or environment
+    const settings = business.settings as any || {};
+    const selcomConfig: SelcomConfig = {
+      apiKey: settings.selcom?.apiKey || process.env.SELCOM_API_KEY || '',
+      apiSecret: settings.selcom?.apiSecret || process.env.SELCOM_API_SECRET || '',
+      vendorId: settings.selcom?.vendorId || process.env.SELCOM_VENDOR_ID || '',
+      baseUrl: settings.selcom?.baseUrl || process.env.SELCOM_BASE_URL || 'https://apigw.selcommobile.com',
+    };
+
+    if (!selcomConfig.apiKey || !selcomConfig.apiSecret || !selcomConfig.vendorId) {
+      res.status(400).json({ 
+        success: false, 
+        error: "Selcom credentials not configured. Set SELCOM_API_KEY, SELCOM_API_SECRET, and SELCOM_VENDOR_ID." 
+      });
+      return;
+    }
+
+    // Get payment methods from business settings - includes card if configured
+    const paymentMethods = getBusinessPaymentMethods(settings);
+    
+    // Default to mpesa + card if no methods configured
+    const methodsToUse = paymentMethods.length > 0 ? paymentMethods : ['mpesa', 'card'];
+
+    const result = await createSelcomCheckout(selcomConfig, {
+      orderId,
+      amount,
+      currency: currency || settings.currency || 'TZS',
+      buyerEmail,
+      buyerPhone,
+      buyerName,
+      paymentMethods: methodsToUse as any,
+      redirectUrl,
+      cancelUrl,
+      webhook,
+    });
+
+    if (!result.success) {
+      res.status(400).json(result);
+      return;
+    }
+
+    res.json({
+      success: true,
+      checkoutUrl: result.checkoutUrl,
+      transactionId: result.transactionId,
+      reference: result.reference,
+      paymentMethodsEnabled: methodsToUse,
+    });
+  } catch (error) {
+    console.error("Selcom checkout error:", error);
+    res.status(500).json({ success: false, error: "Failed to create payment link" });
+  }
+});
+
+app.get("/api/payments/selcom/status/:orderId", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { orderId } = req.params;
+    const { businessId } = req.query;
+
+    if (!businessId) {
+      res.status(400).json({ success: false, error: "businessId query parameter required" });
+      return;
+    }
+
+    const business = await prisma.business.findFirst({
+      where: { id: businessId as string, ownerAdminId: req.admin!.id },
+    });
+
+    if (!business) {
+      res.status(404).json({ success: false, error: "Business not found" });
+      return;
+    }
+
+    const settings = business.settings as any || {};
+    const selcomConfig: SelcomConfig = {
+      apiKey: settings.selcom?.apiKey || process.env.SELCOM_API_KEY || '',
+      apiSecret: settings.selcom?.apiSecret || process.env.SELCOM_API_SECRET || '',
+      vendorId: settings.selcom?.vendorId || process.env.SELCOM_VENDOR_ID || '',
+      baseUrl: settings.selcom?.baseUrl || process.env.SELCOM_BASE_URL || 'https://apigw.selcommobile.com',
+    };
+
+    if (!selcomConfig.apiKey) {
+      res.status(400).json({ success: false, error: "Selcom credentials not configured" });
+      return;
+    }
+
+    const result = await checkSelcomStatus(selcomConfig, orderId);
+    res.json(result);
+  } catch (error) {
+    console.error("Selcom status check error:", error);
+    res.status(500).json({ success: false, error: "Failed to check payment status" });
   }
 });
 
