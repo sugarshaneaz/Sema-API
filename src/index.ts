@@ -3360,6 +3360,629 @@ app.get("/api/payments/selcom/status/:orderId", requireAdminAuth as any, async (
   }
 });
 
+// ============================================================
+// WhatsApp Embedded Signup Flow
+// ============================================================
+
+// Generate a signed nonce for embedded signup security
+function generateSignupNonce(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    console.error("SESSION_SECRET is not configured - signup security compromised");
+  }
+  const nonce = randomBytes(32).toString('hex');
+  const timestamp = Date.now();
+  const data = `${nonce}:${timestamp}`;
+  const signature = createHash('sha256').update(data + (secret || '')).digest('hex');
+  return Buffer.from(`${data}:${signature}`).toString('base64');
+}
+
+// Verify a signed nonce
+function verifySignupNonce(token: string, maxAgeMs: number = 30 * 60 * 1000): boolean {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    console.error("SESSION_SECRET is not configured - cannot verify nonce");
+    return false;
+  }
+  
+  try {
+    const decoded = Buffer.from(token, 'base64').toString('utf-8');
+    const [nonce, timestampStr, signature] = decoded.split(':');
+    const timestamp = parseInt(timestampStr, 10);
+    
+    // Check expiry
+    if (Date.now() - timestamp > maxAgeMs) {
+      return false;
+    }
+    
+    // Verify signature
+    const data = `${nonce}:${timestamp}`;
+    const expectedSig = createHash('sha256').update(data + secret).digest('hex');
+    return signature === expectedSig;
+  } catch {
+    return false;
+  }
+}
+
+// GET /connect/whatsapp - Server-rendered HTML page for Embedded Signup
+app.get("/connect/whatsapp", (req: Request, res: Response) => {
+  const metaAppId = process.env.META_APP_ID;
+  const metaConfigId = process.env.META_CONFIG_ID;
+  
+  if (!metaAppId || !metaConfigId) {
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html><head><title>Configuration Error</title></head>
+      <body style="font-family: system-ui; padding: 40px; text-align: center;">
+        <h1>Configuration Error</h1>
+        <p>META_APP_ID and META_CONFIG_ID environment variables must be set.</p>
+      </body></html>
+    `);
+    return;
+  }
+  
+  const signupNonce = generateSignupNonce();
+  const apiBaseUrl = process.env.API_BASE_URL || `https://${req.get('host')}`;
+  
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connect WhatsApp - Sema</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 48px;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+      text-align: center;
+    }
+    .logo {
+      width: 64px;
+      height: 64px;
+      background: #25D366;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+    }
+    .logo svg { width: 36px; height: 36px; fill: white; }
+    h1 { color: #1a1a2e; font-size: 24px; margin-bottom: 12px; }
+    p { color: #666; font-size: 15px; line-height: 1.6; margin-bottom: 32px; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      background: #1877F2;
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      padding: 14px 28px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: #166FE5; transform: translateY(-1px); }
+    .btn:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+    .btn svg { width: 20px; height: 20px; fill: currentColor; }
+    .status { margin-top: 24px; padding: 16px; border-radius: 8px; display: none; }
+    .status.success { background: #d4edda; color: #155724; display: block; }
+    .status.error { background: #f8d7da; color: #721c24; display: block; }
+    .status.loading { background: #e2e3e5; color: #383d41; display: block; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #383d41; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+    </div>
+    <h1>Connect WhatsApp</h1>
+    <p>Link your WhatsApp Business account to start receiving messages and automate responses with AI.</p>
+    <button class="btn" id="connectBtn" onclick="startEmbeddedSignup()">
+      <svg viewBox="0 0 24 24"><path d="M12 2.04C6.5 2.04 2 6.53 2 12.06C2 17.06 5.66 21.21 10.44 21.96V14.96H7.9V12.06H10.44V9.85C10.44 7.34 11.93 5.96 14.22 5.96C15.31 5.96 16.45 6.15 16.45 6.15V8.62H15.19C13.95 8.62 13.56 9.39 13.56 10.18V12.06H16.34L15.89 14.96H13.56V21.96A10 10 0 0022 12.06C22 6.53 17.5 2.04 12 2.04Z"/></svg>
+      Continue with Facebook
+    </button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    const SIGNUP_NONCE = '${signupNonce}';
+    const API_BASE = '${apiBaseUrl}';
+    const META_APP_ID = '${metaAppId}';
+    const META_CONFIG_ID = '${metaConfigId}';
+    
+    window.fbAsyncInit = function() {
+      FB.init({
+        appId: META_APP_ID,
+        autoLogAppEvents: true,
+        xfbml: true,
+        version: 'v18.0'
+      });
+    };
+    
+    (function(d, s, id) {
+      var js, fjs = d.getElementsByTagName(s)[0];
+      if (d.getElementById(id)) return;
+      js = d.createElement(s); js.id = id;
+      js.src = "https://connect.facebook.net/en_US/sdk.js";
+      fjs.parentNode.insertBefore(js, fjs);
+    }(document, 'script', 'facebook-jssdk'));
+    
+    function showStatus(type, message) {
+      const el = document.getElementById('status');
+      el.className = 'status ' + type;
+      el.innerHTML = type === 'loading' ? '<span class="spinner"></span>' + message : message;
+    }
+    
+    function startEmbeddedSignup() {
+      const btn = document.getElementById('connectBtn');
+      btn.disabled = true;
+      showStatus('loading', 'Opening Facebook Login...');
+      
+      FB.login(function(response) {
+        if (response.authResponse) {
+          handleSignupResponse(response.authResponse);
+        } else {
+          btn.disabled = false;
+          showStatus('error', 'Login cancelled or failed. Please try again.');
+        }
+      }, {
+        config_id: META_CONFIG_ID,
+        response_type: 'code',
+        override_default_response_type: true,
+        extras: {
+          setup: {},
+          featureType: '',
+          sessionInfoVersion: 2
+        }
+      });
+    }
+    
+    async function handleSignupResponse(authResponse) {
+      const btn = document.getElementById('connectBtn');
+      showStatus('loading', 'Completing setup...');
+      
+      try {
+        let result;
+        
+        if (authResponse.code) {
+          // Exchange code server-side - this now handles everything
+          result = await exchangeCodeForInfo(authResponse.code);
+        } else {
+          // Non-code response - this flow is not supported for security reasons
+          // All auth must go through code exchange server-side
+          btn.disabled = false;
+          showStatus('error', 'Please retry - authentication must use code exchange flow.');
+          return;
+        }
+        
+        if (result.ok) {
+          showStatus('success', '✓ WhatsApp connected successfully! You can close this window.');
+          if (window.opener) {
+            window.opener.postMessage({ type: 'WHATSAPP_CONNECTED', connection: result.connection }, '*');
+          }
+        } else {
+          btn.disabled = false;
+          showStatus('error', result.error || 'Failed to complete setup. Please try again.');
+        }
+      } catch (err) {
+        btn.disabled = false;
+        showStatus('error', 'Connection error: ' + (err.message || 'Unknown error'));
+      }
+    }
+    
+    async function exchangeCodeForInfo(code) {
+      // Exchange code server-side - this handles everything including storage
+      const resp = await fetch(API_BASE + '/api/whatsapp/embedded-signup/exchange', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, nonce: SIGNUP_NONCE })
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to exchange code');
+      }
+      const result = await resp.json();
+      // The exchange endpoint now stores the connection directly
+      // Return a signal to skip the /complete call
+      result._skipComplete = true;
+      return result;
+    }
+    
+    function parseSessionInfo(authResponse) {
+      // Parse session info from embedded signup response
+      // The structure varies based on Meta's response
+      return {
+        wabaId: authResponse.waba_id || null,
+        phoneNumberId: authResponse.phone_number_id || null,
+        displayPhoneNumber: authResponse.display_phone_number || null,
+        businessName: authResponse.business_name || null
+      };
+    }
+  </script>
+</body>
+</html>
+  `;
+  
+  res.type('html').send(html);
+});
+
+// POST /api/whatsapp/embedded-signup/complete - Finalize signup via auth code exchange (server-side only)
+app.post("/api/whatsapp/embedded-signup/complete", async (req: Request, res: Response) => {
+  try {
+    const { nonce, wabaId, phoneNumberId, displayPhoneNumber, businessName, authCode } = req.body;
+    
+    // Verify nonce (requires SESSION_SECRET)
+    if (!nonce || !verifySignupNonce(nonce)) {
+      res.status(401).json({ ok: false, error: "Invalid or expired signup session" });
+      return;
+    }
+    
+    // Require authCode for server-side token exchange (no browser tokens accepted)
+    if (!authCode) {
+      res.status(400).json({ ok: false, error: "authCode is required for server-side token exchange" });
+      return;
+    }
+    
+    if (!wabaId || !phoneNumberId) {
+      res.status(400).json({ ok: false, error: "wabaId and phoneNumberId are required" });
+      return;
+    }
+    
+    // Exchange auth code for token server-side only
+    const exchangeResult = await exchangeAuthCodeForToken(authCode);
+    if (!exchangeResult.success) {
+      res.status(400).json({ ok: false, error: exchangeResult.error || "Failed to exchange auth code" });
+      return;
+    }
+    const finalAccessToken = exchangeResult.accessToken;
+    
+    // Upsert WhatsApp connection
+    const connection = await prisma.whatsappConnection.upsert({
+      where: { phoneNumberId },
+      create: {
+        wabaId,
+        phoneNumberId,
+        accessToken: finalAccessToken,
+        displayPhoneNumber,
+        businessName,
+        enabled: true,
+        mode: "REVIEW",
+      },
+      update: {
+        wabaId,
+        accessToken: finalAccessToken,
+        displayPhoneNumber,
+        businessName,
+        updatedAt: new Date(),
+      },
+    });
+    
+    // Subscribe app to WABA webhooks
+    const subscribeResult = await subscribeToWABAWebhooks(wabaId, finalAccessToken);
+    if (!subscribeResult.success) {
+      console.warn("Webhook subscription warning:", subscribeResult.error);
+      // Don't fail the whole request, just log warning
+    }
+    
+    // Log onboarding attempt for debugging
+    await prisma.whatsappWebhookEvent.create({
+      data: {
+        method: "EMBEDDED_SIGNUP",
+        bodyJson: {
+          wabaId,
+          phoneNumberId,
+          displayPhoneNumber,
+          businessName,
+          subscriptionSuccess: subscribeResult.success,
+        },
+        note: "ONBOARDING_COMPLETE",
+      },
+    });
+    
+    res.json({
+      ok: true,
+      connection: {
+        id: connection.id,
+        wabaId: connection.wabaId,
+        phoneNumberId: connection.phoneNumberId,
+        displayPhoneNumber: connection.displayPhoneNumber,
+        businessName: connection.businessName,
+        enabled: connection.enabled,
+        mode: connection.mode,
+      },
+      webhookSubscribed: subscribeResult.success,
+    });
+  } catch (error) {
+    console.error("Embedded signup complete error:", error);
+    res.status(500).json({ ok: false, error: "Failed to complete signup" });
+  }
+});
+
+// POST /api/whatsapp/embedded-signup/exchange - Server-side code exchange (never returns token to browser)
+app.post("/api/whatsapp/embedded-signup/exchange", async (req: Request, res: Response) => {
+  try {
+    const { code, nonce } = req.body;
+    
+    if (!nonce || !verifySignupNonce(nonce as string)) {
+      res.status(401).json({ ok: false, error: "Invalid or expired session" });
+      return;
+    }
+    
+    if (!code) {
+      res.status(400).json({ ok: false, error: "code is required" });
+      return;
+    }
+    
+    // Exchange code for access token (server-side only)
+    const exchangeResult = await exchangeAuthCodeForToken(code as string);
+    if (!exchangeResult.success) {
+      res.status(400).json({ ok: false, error: exchangeResult.error });
+      return;
+    }
+    
+    // Get WABA and phone info from token
+    const wabaInfo = await getWABAInfoFromToken(exchangeResult.accessToken!);
+    
+    if (!wabaInfo.wabaId || !wabaInfo.phoneNumberId) {
+      res.status(400).json({ ok: false, error: "Could not retrieve WhatsApp Business Account info" });
+      return;
+    }
+    
+    // Store the connection directly - don't return token to browser
+    const connection = await prisma.whatsappConnection.upsert({
+      where: { phoneNumberId: wabaInfo.phoneNumberId },
+      create: {
+        wabaId: wabaInfo.wabaId,
+        phoneNumberId: wabaInfo.phoneNumberId,
+        accessToken: exchangeResult.accessToken!,
+        displayPhoneNumber: wabaInfo.displayPhoneNumber,
+        businessName: wabaInfo.businessName,
+        enabled: true,
+        mode: "REVIEW",
+      },
+      update: {
+        wabaId: wabaInfo.wabaId,
+        accessToken: exchangeResult.accessToken!,
+        displayPhoneNumber: wabaInfo.displayPhoneNumber,
+        businessName: wabaInfo.businessName,
+        updatedAt: new Date(),
+      },
+    });
+    
+    // Subscribe to webhooks
+    const subscribeResult = await subscribeToWABAWebhooks(wabaInfo.wabaId, exchangeResult.accessToken!);
+    
+    // Log onboarding
+    await prisma.whatsappWebhookEvent.create({
+      data: {
+        method: "EMBEDDED_SIGNUP",
+        bodyJson: {
+          wabaId: wabaInfo.wabaId,
+          phoneNumberId: wabaInfo.phoneNumberId,
+          displayPhoneNumber: wabaInfo.displayPhoneNumber,
+          businessName: wabaInfo.businessName,
+          subscriptionSuccess: subscribeResult.success,
+        },
+        note: "ONBOARDING_VIA_EXCHANGE",
+      },
+    });
+    
+    // Return connection info without token
+    res.json({
+      ok: true,
+      connection: {
+        id: connection.id,
+        wabaId: connection.wabaId,
+        phoneNumberId: connection.phoneNumberId,
+        displayPhoneNumber: connection.displayPhoneNumber,
+        businessName: connection.businessName,
+        enabled: connection.enabled,
+        mode: connection.mode,
+      },
+      webhookSubscribed: subscribeResult.success,
+    });
+  } catch (error) {
+    console.error("Exchange code error:", error);
+    res.status(500).json({ ok: false, error: "Failed to exchange code" });
+  }
+});
+
+// GET /api/whatsapp/embedded-signup/status - Check if user has connected WhatsApp
+app.get("/api/whatsapp/embedded-signup/status", async (req: Request, res: Response) => {
+  try {
+    // Get the most recent connection (could be filtered by admin/business in future)
+    const connections = await prisma.whatsappConnection.findMany({
+      select: {
+        id: true,
+        wabaId: true,
+        phoneNumberId: true,
+        displayPhoneNumber: true,
+        businessName: true,
+        enabled: true,
+        mode: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    });
+    
+    res.json({
+      ok: true,
+      hasConnection: connections.length > 0,
+      connections,
+    });
+  } catch (error) {
+    console.error("Status check error:", error);
+    res.status(500).json({ ok: false, error: "Failed to check status" });
+  }
+});
+
+// GET /api/debug/whatsapp/onboarding - Debug endpoint for onboarding attempts
+app.get("/api/debug/whatsapp/onboarding", async (req: Request, res: Response) => {
+  const { key, limit } = req.query;
+  const debugKey = process.env.DEBUG_KEY || "sema-debug-2026";
+  
+  if (key !== debugKey) {
+    res.status(401).json({ error: "Invalid debug key" });
+    return;
+  }
+  
+  try {
+    const events = await prisma.whatsappWebhookEvent.findMany({
+      where: {
+        OR: [
+          { method: "EMBEDDED_SIGNUP" },
+          { note: { contains: "ONBOARDING" } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Number(limit) || 50,
+    });
+    
+    res.json({ ok: true, count: events.length, events });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch onboarding events" });
+  }
+});
+
+// Helper: Exchange auth code for access token
+async function exchangeAuthCodeForToken(code: string): Promise<{ success: boolean; accessToken?: string; error?: string }> {
+  try {
+    const appId = process.env.META_APP_ID;
+    const appSecret = process.env.META_APP_SECRET;
+    const redirectUri = process.env.META_REDIRECT_URI || '';
+    
+    if (!appId || !appSecret) {
+      return { success: false, error: "META_APP_ID and META_APP_SECRET required" };
+    }
+    
+    const response = await fetch(
+      `https://graph.facebook.com/v18.0/oauth/access_token?` +
+      `client_id=${appId}&client_secret=${appSecret}&code=${code}&redirect_uri=${encodeURIComponent(redirectUri)}`,
+      { method: 'GET' }
+    );
+    
+    const data = await response.json();
+    
+    if (data.access_token) {
+      return { success: true, accessToken: data.access_token };
+    }
+    
+    return { success: false, error: data.error?.message || "Token exchange failed" };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Helper: Get WABA info from access token
+async function getWABAInfoFromToken(accessToken: string): Promise<{
+  wabaId: string | null;
+  phoneNumberId: string | null;
+  displayPhoneNumber: string | null;
+  businessName: string | null;
+}> {
+  try {
+    // Get debug token info to find business ID
+    const debugResp = await fetch(
+      `https://graph.facebook.com/v18.0/debug_token?input_token=${accessToken}&access_token=${accessToken}`
+    );
+    const debugData = await debugResp.json();
+    
+    // Try to get WABA from the granted scopes/data
+    // This is simplified - actual implementation may need to query /me/businesses or /me/accounts
+    const wabaResp = await fetch(
+      `https://graph.facebook.com/v18.0/me/whatsapp_business_accounts?access_token=${accessToken}`
+    );
+    const wabaData = await wabaResp.json();
+    
+    if (wabaData.data && wabaData.data.length > 0) {
+      const waba = wabaData.data[0];
+      
+      // Get phone numbers for this WABA
+      const phonesResp = await fetch(
+        `https://graph.facebook.com/v18.0/${waba.id}/phone_numbers?access_token=${accessToken}`
+      );
+      const phonesData = await phonesResp.json();
+      
+      const phone = phonesData.data?.[0] || {};
+      
+      return {
+        wabaId: waba.id,
+        phoneNumberId: phone.id || null,
+        displayPhoneNumber: phone.display_phone_number || null,
+        businessName: waba.name || null,
+      };
+    }
+    
+    return { wabaId: null, phoneNumberId: null, displayPhoneNumber: null, businessName: null };
+  } catch (error) {
+    console.error("Get WABA info error:", error);
+    return { wabaId: null, phoneNumberId: null, displayPhoneNumber: null, businessName: null };
+  }
+}
+
+// Helper: Subscribe app to WABA webhooks
+async function subscribeToWABAWebhooks(wabaId: string, accessToken: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Graph API expects access_token as query parameter for POST requests to subscribed_apps
+    const response = await fetch(
+      `https://graph.facebook.com/v18.0/${wabaId}/subscribed_apps?access_token=${accessToken}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      }
+    );
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      console.log(`Webhook subscription successful for WABA ${wabaId}`);
+      return { success: true };
+    }
+    
+    return { success: false, error: data.error?.message || "Subscription failed" };
+  } catch (error: any) {
+    console.error("Webhook subscription error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Helper: Verify webhook subscription
+async function verifyWebhookSubscription(wabaId: string, accessToken: string): Promise<{ subscribed: boolean; apps?: any[] }> {
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/v18.0/${wabaId}/subscribed_apps?access_token=${accessToken}`
+    );
+    const data = await response.json();
+    
+    return {
+      subscribed: data.data && data.data.length > 0,
+      apps: data.data || [],
+    };
+  } catch {
+    return { subscribed: false };
+  }
+}
+
 app.listen(port, "0.0.0.0", () => {
   console.log(`=== sema-api started ===`);
   console.log(`PORT: ${port}`);
