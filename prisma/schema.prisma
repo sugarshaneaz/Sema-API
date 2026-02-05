@@ -12,6 +12,7 @@ model WhatsappConnection {
   phoneNumberId      String    @unique
   accessToken        String
   displayPhoneNumber String?
+  businessName       String?
   enabled            Boolean   @default(true)
   mode               String    @default("REVIEW")
   pausedUntil        DateTime?
