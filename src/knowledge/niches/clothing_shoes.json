@@ -1,0 +1,27 @@
+{
+  "key": "clothing_shoes",
+  "label": { "en": "Clothing & Shoes", "sw": "Nguo na Viatu" },
+  "primer": {
+    "en": "You are an AI assistant for a clothing and shoes store. Help customers with product inquiries, sizing, availability, pricing, and style recommendations. Always confirm sizes and colors before processing orders.",
+    "sw": "Wewe ni msaidizi wa AI kwa duka la nguo na viatu. Saidia wateja kuhusu bidhaa, ukubwa, upatikanaji, bei, na mapendekezo ya mitindo. Daima thibitisha ukubwa na rangi kabla ya kushughulikia maagizo."
+  },
+  "intents": [
+    { "key": "size_inquiry", "description": { "en": "Customer asks about sizes", "sw": "Mteja anauliza kuhusu ukubwa" }, "exampleQuestions": ["Do you have size 42?", "Mna ukubwa wa 42?"], "responseTemplate": { "en": "Let me check available sizes for {item}.", "sw": "Acha niangalie ukubwa unaopatikana kwa {item}." } },
+    { "key": "new_arrivals", "description": { "en": "Customer asks about new stock", "sw": "Mteja anauliza kuhusu bidhaa mpya" }, "exampleQuestions": ["What's new?", "Kuna nini kipya?"], "responseTemplate": { "en": "Here are our latest arrivals:", "sw": "Hizi ni bidhaa zetu mpya:" } }
+  ],
+  "onboardingFields": [
+    { "key": "storeType", "type": "select", "required": true, "label": { "en": "Store Focus", "sw": "Msimamo wa Duka" }, "help": { "en": "What do you primarily sell?", "sw": "Mnauza nini hasa?" }, "options": [{ "value": "clothing", "label": { "en": "Clothing Only", "sw": "Nguo Tu" } }, { "value": "shoes", "label": { "en": "Shoes Only", "sw": "Viatu Tu" } }, { "value": "both", "label": { "en": "Clothing & Shoes", "sw": "Nguo na Viatu" } }] },
+    { "key": "targetMarket", "type": "multi", "required": true, "label": { "en": "Target Market", "sw": "Soko Lengwa" }, "help": { "en": "Who do you sell to?", "sw": "Mnauzia nani?" }, "options": [{ "value": "men", "label": { "en": "Men", "sw": "Wanaume" } }, { "value": "women", "label": { "en": "Women", "sw": "Wanawake" } }, { "value": "children", "label": { "en": "Children", "sw": "Watoto" } }, { "value": "unisex", "label": { "en": "Unisex", "sw": "Wote" } }] },
+    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sat 9am-7pm", "sw": "mfano Jumatatu-Jumamosi 9am-7pm" } }
+  ],
+  "rules": {
+    "neverInvent": ["price", "stock", "sizes", "colors", "materials", "eta"],
+    "escalateIf": ["refund_request", "complaint", "wrong_size", "defective_item"],
+    "style": ["WhatsApp short messages", "mention sizes and colors", "confirm order details before payment", "suggest matching items"]
+  },
+  "templates": {
+    "orderConfirm": { "en": "Your order:\n{items}\nSize: {size} | Color: {color}\nTotal: {currency} {total}\n\nConfirm?", "sw": "Agizo lako:\n{items}\nUkubwa: {size} | Rangi: {color}\nJumla: {currency} {total}\n\nThibitisha?" },
+    "availabilityCheck": { "en": "Let me check sizes and colors available for {item}.", "sw": "Acha niangalie ukubwa na rangi zinazopatikana kwa {item}." },
+    "quoteRequest": { "en": "For bulk/wholesale pricing, please share:\n- Items and quantities\n- Sizes needed", "sw": "Kwa bei ya wingi/jumla, tafadhali shiriki:\n- Bidhaa na idadi\n- Ukubwa unaohitajika" }
+  }
+}

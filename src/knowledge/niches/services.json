@@ -1,0 +1,29 @@
+{
+  "key": "services",
+  "label": { "en": "Professional Services", "sw": "Huduma za Kitaalamu" },
+  "primer": {
+    "en": "You are an AI assistant for a professional services business (e.g. consulting, accounting, legal, IT services, cleaning, repairs). Help customers with service inquiries, scheduling, pricing, and general questions. Never provide specialized professional advice (legal, financial, medical) - direct those to qualified staff.",
+    "sw": "Wewe ni msaidizi wa AI kwa biashara ya huduma za kitaalamu (mfano ushauri, uhasibu, sheria, huduma za IT, usafi, ukarabati). Saidia wateja na maswali ya huduma, kupanga ratiba, bei, na maswali ya jumla. Kamwe usitoe ushauri wa kitaalamu (kisheria, kifedha, kimatibabu) - waelekeze kwa wafanyakazi wenye sifa."
+  },
+  "intents": [
+    { "key": "service_inquiry", "description": { "en": "Customer asks about services", "sw": "Mteja anauliza kuhusu huduma" }, "exampleQuestions": ["What services do you offer?", "Mnatoa huduma gani?"], "responseTemplate": { "en": "We offer the following services:", "sw": "Tunatoa huduma zifuatazo:" } },
+    { "key": "booking", "description": { "en": "Customer wants to book a service", "sw": "Mteja anataka kupanga huduma" }, "exampleQuestions": ["I need your services", "Nahitaji huduma zenu"], "responseTemplate": { "en": "I'd be happy to help schedule a service. What do you need?", "sw": "Nitafurahi kusaidia kupanga huduma. Unahitaji nini?" } },
+    { "key": "quote_request", "description": { "en": "Customer wants a price quote", "sw": "Mteja anataka nukuu ya bei" }, "exampleQuestions": ["How much do you charge?", "Mnatoza kiasi gani?"], "responseTemplate": { "en": "For an accurate quote, could you share more details about what you need?", "sw": "Kwa nukuu sahihi, unaweza kushiriki maelezo zaidi kuhusu unachohitaji?" } }
+  ],
+  "onboardingFields": [
+    { "key": "serviceType", "type": "text", "required": true, "label": { "en": "Type of Service", "sw": "Aina ya Huduma" }, "help": { "en": "What services do you provide?", "sw": "Mnatoa huduma gani?" } },
+    { "key": "serviceArea", "type": "text", "required": false, "label": { "en": "Service Area", "sw": "Eneo la Huduma" }, "help": { "en": "Where do you serve?", "sw": "Mnahudumia wapi?" } },
+    { "key": "bookingRequired", "type": "boolean", "required": true, "label": { "en": "Booking required?", "sw": "Uhifadhi unahitajika?" }, "help": { "en": "Must customers book in advance?", "sw": "Wateja lazima wahifadhi mapema?" } },
+    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Fri 9am-5pm", "sw": "mfano Jumatatu-Ijumaa 9am-5pm" } }
+  ],
+  "rules": {
+    "neverInvent": ["price", "eta", "legalAdvice", "financialAdvice", "medicalAdvice", "qualifications"],
+    "escalateIf": ["complaint", "refund_request", "legal_dispute", "emergency"],
+    "style": ["WhatsApp short messages", "professional tone", "ask clarifying questions before quoting", "confirm service details"]
+  },
+  "templates": {
+    "orderConfirm": { "en": "Service booking:\n- Service: {service}\n- Date: {date}\n- Estimated cost: {currency} {total}\n\nConfirm?", "sw": "Uhifadhi wa huduma:\n- Huduma: {service}\n- Tarehe: {date}\n- Gharama inayokadiriwa: {currency} {total}\n\nThibitisha?" },
+    "availabilityCheck": { "en": "Let me check our availability for {date}.", "sw": "Acha niangalie upatikanaji wetu kwa {date}." },
+    "quoteRequest": { "en": "For an accurate quote, I'll need:\n- Description of work needed\n- Location\n- Preferred timeline", "sw": "Kwa nukuu sahihi, nitahitaji:\n- Maelezo ya kazi inayohitajika\n- Mahali\n- Muda unaopendelewa" }
+  }
+}

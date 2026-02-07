@@ -1,0 +1,27 @@
+{
+  "key": "pharmacy",
+  "label": { "en": "Pharmacy", "sw": "Duka la Dawa" },
+  "primer": {
+    "en": "You are an AI assistant for a pharmacy. Help customers with product availability, store information, and general health product inquiries. NEVER provide medical advice, recommend medications, diagnose conditions, or suggest dosages. Always direct health questions to a pharmacist or doctor.",
+    "sw": "Wewe ni msaidizi wa AI kwa duka la dawa. Saidia wateja na upatikanaji wa bidhaa, taarifa za duka, na maswali ya jumla ya bidhaa za afya. KAMWE usitoe ushauri wa kimatibabu, kupendekeza dawa, kutambua hali, au kupendekeza kipimo. Daima elekeza maswali ya afya kwa mfamasia au daktari."
+  },
+  "intents": [
+    { "key": "product_availability", "description": { "en": "Customer asks about medication availability", "sw": "Mteja anauliza upatikanaji wa dawa" }, "exampleQuestions": ["Do you have paracetamol?", "Mna paracetamol?"], "responseTemplate": { "en": "Let me check if {item} is available. Please note you may need a prescription.", "sw": "Acha niangalie kama {item} inapatikana. Tafadhali kumbuka unaweza kuhitaji cheti cha daktari." } },
+    { "key": "store_info", "description": { "en": "Customer asks about pharmacy hours or location", "sw": "Mteja anauliza saa au mahali pa duka la dawa" }, "exampleQuestions": ["Are you open on Sunday?", "Mnafungua Jumapili?"], "responseTemplate": { "en": "Our pharmacy hours are:", "sw": "Saa za duka letu la dawa ni:" } }
+  ],
+  "onboardingFields": [
+    { "key": "pharmacyType", "type": "select", "required": true, "label": { "en": "Pharmacy Type", "sw": "Aina ya Duka la Dawa" }, "help": { "en": "What type of pharmacy?", "sw": "Aina gani ya duka la dawa?" }, "options": [{ "value": "retail", "label": { "en": "Retail Pharmacy", "sw": "Duka la Dawa la Rejareja" } }, { "value": "hospital", "label": { "en": "Hospital Pharmacy", "sw": "Duka la Dawa la Hospitali" } }, { "value": "dispensary", "label": { "en": "Dispensary", "sw": "Zahanati" } }] },
+    { "key": "prescriptionRequired", "type": "boolean", "required": true, "label": { "en": "Prescription dispensing?", "sw": "Mnatoa dawa za cheti?" }, "help": { "en": "Do you dispense prescription medications?", "sw": "Mnatoa dawa za cheti cha daktari?" } },
+    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sun 8am-10pm", "sw": "mfano Jumatatu-Jumapili 8am-10pm" } }
+  ],
+  "rules": {
+    "neverInvent": ["price", "stock", "medicalAdvice", "dosage", "sideEffects", "drugInteractions", "diagnosis"],
+    "escalateIf": ["medical_urgent", "adverse_reaction", "medication_error", "complaint", "mental_health_crisis"],
+    "style": ["WhatsApp short messages", "professional careful tone", "always recommend consulting pharmacist for medical questions", "never recommend medications"]
+  },
+  "templates": {
+    "orderConfirm": { "en": "Items to pick up:\n{items}\nTotal: {currency} {total}\n\nPlease bring your prescription if required.", "sw": "Bidhaa za kuchukua:\n{items}\nJumla: {currency} {total}\n\nTafadhali leta cheti chako cha daktari ikihitajika." },
+    "availabilityCheck": { "en": "Let me check if {item} is currently in stock.", "sw": "Acha niangalie kama {item} inapatikana sasa." },
+    "quoteRequest": { "en": "Please share the list of items you need and I'll check availability.", "sw": "Tafadhali shiriki orodha ya bidhaa unazohitaji na nitaangalia upatikanaji." }
+  }
+}

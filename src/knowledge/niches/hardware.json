@@ -1,0 +1,29 @@
+{
+  "key": "hardware",
+  "label": { "en": "Hardware Store", "sw": "Duka la Vifaa vya Ujenzi" },
+  "primer": {
+    "en": "You are an AI assistant for a hardware store. Help customers with product inquiries, pricing, availability, project advice, and tool recommendations. Verify stock before confirming availability and provide practical guidance.",
+    "sw": "Wewe ni msaidizi wa AI kwa duka la vifaa vya ujenzi. Saidia wateja kuhusu bidhaa, bei, upatikanaji, ushauri wa mradi, na mapendekezo ya zana. Thibitisha hifadhi kabla ya kuthibitisha upatikanaji na toa mwongozo wa vitendo."
+  },
+  "intents": [
+    { "key": "product_inquiry", "description": { "en": "Customer asks about hardware products", "sw": "Mteja anauliza kuhusu bidhaa za vifaa" }, "exampleQuestions": ["Do you have cement?", "Mna saruji?"], "responseTemplate": { "en": "Let me check our stock for {item}.", "sw": "Acha niangalie hifadhi yetu kwa {item}." } },
+    { "key": "project_advice", "description": { "en": "Customer needs help with a project", "sw": "Mteja anahitaji msaada na mradi" }, "exampleQuestions": ["What do I need to build a fence?", "Nahitaji nini kujenga ua?"], "responseTemplate": { "en": "For a {project}, you'll typically need:", "sw": "Kwa {project}, kawaida utahitaji:" } },
+    { "key": "bulk_order", "description": { "en": "Customer wants to place a bulk order", "sw": "Mteja anataka kuagiza kwa wingi" }, "exampleQuestions": ["I need 100 bags of cement", "Nahitaji mifuko 100 ya saruji"], "responseTemplate": { "en": "For bulk orders, let me get you a quote.", "sw": "Kwa maagizo ya wingi, acha nikupatie nukuu." } }
+  ],
+  "onboardingFields": [
+    { "key": "mainCategories", "type": "multi", "required": true, "label": { "en": "Main Product Categories", "sw": "Aina Kuu za Bidhaa" }, "help": { "en": "What do you primarily sell?", "sw": "Mnauza nini hasa?" }, "options": [{ "value": "building_materials", "label": { "en": "Building Materials", "sw": "Vifaa vya Ujenzi" } }, { "value": "tools", "label": { "en": "Tools", "sw": "Zana" } }, { "value": "plumbing", "label": { "en": "Plumbing", "sw": "Mabomba" } }, { "value": "electrical", "label": { "en": "Electrical", "sw": "Umeme" } }, { "value": "paint", "label": { "en": "Paint & Finishes", "sw": "Rangi na Kumalizia" } }] },
+    { "key": "bulkOrders", "type": "boolean", "required": true, "label": { "en": "Accept bulk/contractor orders?", "sw": "Mnakubali maagizo ya wingi?" }, "help": { "en": "Do you serve contractors and bulk buyers?", "sw": "Mnahudumia wakandarasi na wanunuzi wa wingi?" } },
+    { "key": "deliveryAvailable", "type": "boolean", "required": true, "label": { "en": "Delivery available?", "sw": "Uwasilishaji unapatikana?" }, "help": { "en": "Can you deliver heavy materials?", "sw": "Mnaweza kuwasilisha vifaa vizito?" } },
+    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sat 7am-6pm", "sw": "mfano Jumatatu-Jumamosi 7am-6pm" } }
+  ],
+  "rules": {
+    "neverInvent": ["price", "stock", "eta", "address", "paymentMethods", "warranty", "specifications"],
+    "escalateIf": ["refund_request", "complaint", "damaged_product", "wrong_delivery", "safety_concern"],
+    "style": ["WhatsApp short messages", "practical helpful tone", "list items with quantities and prices", "offer project-based recommendations"]
+  },
+  "templates": {
+    "orderConfirm": { "en": "Your order:\n{items}\nTotal: {currency} {total}\n\nDelivery or pickup?", "sw": "Agizo lako:\n{items}\nJumla: {currency} {total}\n\nUwasilishaji au kuchukua?" },
+    "availabilityCheck": { "en": "Let me check if {item} is in stock and current pricing.", "sw": "Acha niangalie kama {item} ipo na bei ya sasa." },
+    "quoteRequest": { "en": "For a project quote, please share:\n- Materials needed\n- Quantities\n- Delivery address (if applicable)", "sw": "Kwa nukuu ya mradi, tafadhali shiriki:\n- Vifaa vinavyohitajika\n- Idadi\n- Anwani ya uwasilishaji (ikiwezekana)" }
+  }
+}

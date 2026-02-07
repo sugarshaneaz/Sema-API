@@ -23,6 +23,8 @@ import OpenAI from "openai";
 import { scrapeWebsite } from "./services/webScraper";
 import { scrapeWebsite as scrapeWithCheerio, scrapeWithBrowser } from "./services/browserScraper";
 import { createSelcomCheckout, checkSelcomStatus, getBusinessPaymentMethods, SelcomConfig } from "./services/selcom";
+import { knowledgePackService } from "./services/knowledgePacks";
+import { buildBusinessContext } from "./promptBuilder";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -859,11 +861,7 @@ app.post("/webhooks/whatsapp", async (req: Request, res: Response) => {
 
 app.get("/api/niches", async (_req: Request, res: Response) => {
   try {
-    const niches = await prisma.niche.findMany({
-      where: { isActive: true },
-      orderBy: { label: "asc" },
-      select: { id: true, label: true, version: true }
-    });
+    const niches = knowledgePackService.getAllNiches();
     res.json(niches);
   } catch (error) {
     console.error("Error fetching niches:", error);
@@ -871,38 +869,52 @@ app.get("/api/niches", async (_req: Request, res: Response) => {
   }
 });
 
-app.get("/api/niches/:id/template", async (req: Request, res: Response) => {
+app.get("/api/niches/:key", async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const niche = await prisma.niche.findUnique({
-      where: { id },
-      include: { template: true }
-    });
+    const { key } = req.params;
+    const pack = knowledgePackService.getPack(key);
 
-    if (!niche) {
-      const fallback = await prisma.niche.findUnique({
-        where: { id: "general_retail" },
-        include: { template: true }
-      });
-      if (fallback?.template) {
-        res.json({
-          nicheId: fallback.id,
-          label: fallback.label,
-          intakeQuestions: (fallback.template.templateJson as any).intakeQuestions || [],
-          template: fallback.template.templateJson
-        });
-        return;
-      }
+    if (!pack) {
       res.status(404).json({ error: "Niche not found" });
       return;
     }
 
-    res.json({
-      nicheId: niche.id,
-      label: niche.label,
-      intakeQuestions: niche.template ? (niche.template.templateJson as any).intakeQuestions || [] : [],
-      template: niche.template?.templateJson || null
-    });
+    res.json(pack);
+  } catch (error) {
+    console.error("Error fetching niche pack:", error);
+    res.status(500).json({ error: "Failed to fetch niche pack" });
+  }
+});
+
+app.get("/api/niches/:id/template", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const pack = knowledgePackService.getPack(id);
+
+    if (pack) {
+      res.json({
+        nicheId: pack.key,
+        label: pack.label.en,
+        intakeQuestions: pack.onboardingFields.filter(f => f.required).map(f => f.label.en),
+        template: pack,
+        onboardingFields: pack.onboardingFields
+      });
+      return;
+    }
+
+    const fallbackPack = knowledgePackService.getPack("general_retail");
+    if (fallbackPack) {
+      res.json({
+        nicheId: fallbackPack.key,
+        label: fallbackPack.label.en,
+        intakeQuestions: fallbackPack.onboardingFields.filter(f => f.required).map(f => f.label.en),
+        template: fallbackPack,
+        onboardingFields: fallbackPack.onboardingFields
+      });
+      return;
+    }
+
+    res.status(404).json({ error: "Niche not found" });
   } catch (error) {
     console.error("Error fetching niche template:", error);
     res.status(500).json({ error: "Failed to fetch niche template" });
@@ -987,6 +999,98 @@ app.put("/api/business/profile", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error updating business profile:", error);
     res.status(500).json({ error: "Failed to update business profile" });
+  }
+});
+
+// POST /api/business/:id/niche - Set niche key for a business profile
+app.post("/api/business/:id/niche", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { nicheKey } = req.body;
+
+    if (!nicheKey) {
+      res.status(400).json({ error: "nicheKey is required" });
+      return;
+    }
+
+    const pack = knowledgePackService.getPack(nicheKey);
+    if (!pack) {
+      res.status(400).json({ error: "Invalid nicheKey. Use GET /api/niches to see available options." });
+      return;
+    }
+
+    const profile = await prisma.businessProfile.update({
+      where: { id },
+      data: { nicheId: nicheKey },
+      include: { niche: true }
+    });
+
+    res.json({ ok: true, profile, knowledgePack: { key: pack.key, label: pack.label } });
+  } catch (error) {
+    console.error("Error setting niche:", error);
+    res.status(500).json({ error: "Failed to set niche" });
+  }
+});
+
+// POST /api/business/:id/onboarding-answers - Save/merge onboarding answers
+app.post("/api/business/:id/onboarding-answers", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { answers } = req.body;
+
+    if (!answers || typeof answers !== "object") {
+      res.status(400).json({ error: "answers object is required" });
+      return;
+    }
+
+    const existing = await prisma.businessProfile.findUnique({ where: { id } });
+    if (!existing) {
+      res.status(404).json({ error: "Business profile not found" });
+      return;
+    }
+
+    const currentAnswers = (existing.intakeAnswers as Record<string, any>) || {};
+    const mergedAnswers = { ...currentAnswers, ...answers };
+
+    const profile = await prisma.businessProfile.update({
+      where: { id },
+      data: { intakeAnswers: mergedAnswers },
+      include: { niche: true }
+    });
+
+    res.json({ ok: true, profile });
+  } catch (error) {
+    console.error("Error saving onboarding answers:", error);
+    res.status(500).json({ error: "Failed to save onboarding answers" });
+  }
+});
+
+// GET /api/business/:id/ai-context - Returns merged context for debugging
+app.get("/api/business/:id/ai-context", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const profile = await prisma.businessProfile.findUnique({
+      where: { id },
+      include: {
+        niche: { include: { template: true } },
+        products: { where: { isActive: true } },
+        faqItems: { where: { isEnabled: true } },
+        policies: true,
+        knowledgeSources: { where: { isEnabled: true } },
+      }
+    });
+
+    if (!profile) {
+      res.status(404).json({ error: "Business profile not found" });
+      return;
+    }
+
+    const context = buildBusinessContext(profile, knowledgePackService);
+    res.json({ ok: true, context });
+  } catch (error) {
+    console.error("Error building AI context:", error);
+    res.status(500).json({ error: "Failed to build AI context" });
   }
 });
 
@@ -3983,10 +4087,71 @@ async function verifyWebhookSubscription(wabaId: string, accessToken: string): P
   }
 }
 
-app.listen(port, "0.0.0.0", () => {
-  console.log(`=== sema-api started ===`);
-  console.log(`PORT: ${port}`);
-  console.log(`NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`DATABASE_URL: ${process.env.DATABASE_URL ? 'configured' : 'missing'}`);
-  console.log(`Listening on 0.0.0.0:${port}`);
+async function seedNichesFromPacks() {
+  try {
+    knowledgePackService.loadAll();
+    const packs = knowledgePackService.getAllPacks();
+
+    for (const pack of packs) {
+      await prisma.niche.upsert({
+        where: { id: pack.key },
+        create: {
+          id: pack.key,
+          label: pack.label.en,
+          isActive: true,
+          version: 1,
+        },
+        update: {
+          label: pack.label.en,
+          isActive: true,
+        },
+      });
+
+      const templateJson = {
+        systemRules: [pack.primer.en, ...pack.rules.style],
+        intakeQuestions: pack.onboardingFields.filter(f => f.required).map(f => f.label.en),
+        qualificationFlows: pack.intents.map(i => ({
+          trigger: i.exampleQuestions,
+          followUp: i.responseTemplate.en
+        })),
+        starterFaqs: pack.intents.map(i => ({
+          q: i.exampleQuestions[0] || i.description.en,
+          a: i.responseTemplate.en
+        })),
+        upsellRules: [],
+        safetyRules: {
+          escalateTriggers: pack.rules.escalateIf,
+          refuseTriggers: pack.rules.neverInvent
+            .filter(r => ["medicalAdvice", "legalAdvice", "diagnosis", "medication"].includes(r)),
+          refusalMessage: "I'm not able to provide that information. Please speak with our team directly.",
+          escalationMessage: "Let me connect you with someone who can help with this."
+        },
+      };
+
+      await prisma.nicheTemplate.upsert({
+        where: { nicheId: pack.key },
+        create: {
+          nicheId: pack.key,
+          templateJson,
+        },
+        update: {
+          templateJson,
+        },
+      });
+    }
+
+    console.log(`Seeded ${packs.length} niches from knowledge packs`);
+  } catch (error) {
+    console.error("Error seeding niches:", error);
+  }
+}
+
+seedNichesFromPacks().then(() => {
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`=== sema-api started ===`);
+    console.log(`PORT: ${port}`);
+    console.log(`NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`DATABASE_URL: ${process.env.DATABASE_URL ? 'configured' : 'missing'}`);
+    console.log(`Listening on 0.0.0.0:${port}`);
+  });
 });

@@ -1,0 +1,28 @@
+{
+  "key": "salon",
+  "label": { "en": "Salon / Barbershop", "sw": "Saluni / Kinyozi" },
+  "primer": {
+    "en": "You are an AI assistant for a salon or barbershop. Help customers with appointment booking, service inquiries, pricing, and availability. Be friendly and helpful with style recommendations when asked.",
+    "sw": "Wewe ni msaidizi wa AI kwa saluni au kinyozi. Saidia wateja kupanga miadi, kuuliza huduma, bei, na upatikanaji. Kuwa rafiki na msaidizi na mapendekezo ya mitindo unapoulizwa."
+  },
+  "intents": [
+    { "key": "booking", "description": { "en": "Customer wants to book an appointment", "sw": "Mteja anataka kupanga miadi" }, "exampleQuestions": ["I need a haircut", "Nahitaji kunyolewa"], "responseTemplate": { "en": "I'd love to help you book! When would you like to come in?", "sw": "Ningependa kukusaidia kupanga! Ungependa kuja lini?" } },
+    { "key": "services_pricing", "description": { "en": "Customer asks about services and prices", "sw": "Mteja anauliza kuhusu huduma na bei" }, "exampleQuestions": ["What services do you offer?", "Mnatoa huduma gani?"], "responseTemplate": { "en": "Here are our services and pricing:", "sw": "Hizi ni huduma na bei zetu:" } },
+    { "key": "stylist_availability", "description": { "en": "Customer asks about stylist availability", "sw": "Mteja anauliza upatikanaji wa mtaalamu" }, "exampleQuestions": ["Is Sarah available tomorrow?", "Sarah yupo kesho?"], "responseTemplate": { "en": "Let me check {stylist}'s schedule for you.", "sw": "Acha niangalie ratiba ya {stylist} kwako." } }
+  ],
+  "onboardingFields": [
+    { "key": "salonType", "type": "select", "required": true, "label": { "en": "Salon Type", "sw": "Aina ya Saluni" }, "help": { "en": "What type of salon?", "sw": "Aina gani ya saluni?" }, "options": [{ "value": "hair", "label": { "en": "Hair Salon", "sw": "Saluni ya Nywele" } }, { "value": "barbershop", "label": { "en": "Barbershop", "sw": "Kinyozi" } }, { "value": "beauty", "label": { "en": "Beauty Salon", "sw": "Saluni ya Urembo" } }, { "value": "spa", "label": { "en": "Spa & Salon", "sw": "Spa na Saluni" } }] },
+    { "key": "walkInsAccepted", "type": "boolean", "required": true, "label": { "en": "Accept walk-ins?", "sw": "Mnakubali wageni bila miadi?" }, "help": { "en": "Can customers come without appointment?", "sw": "Wateja wanaweza kuja bila miadi?" } },
+    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Tue-Sun 9am-7pm", "sw": "mfano Jumanne-Jumapili 9am-7pm" } }
+  ],
+  "rules": {
+    "neverInvent": ["price", "eta", "address", "paymentMethods", "stylistAvailability"],
+    "escalateIf": ["complaint", "allergic_reaction", "injury", "refund_request"],
+    "style": ["WhatsApp short messages", "friendly casual tone", "list services with prices", "confirm appointment details"]
+  },
+  "templates": {
+    "orderConfirm": { "en": "Your appointment:\n- Service: {service}\n- Date: {date}\n- Time: {time}\n\nConfirm?", "sw": "Miadi yako:\n- Huduma: {service}\n- Tarehe: {date}\n- Saa: {time}\n\nThibitisha?" },
+    "availabilityCheck": { "en": "Let me check availability for {date}.", "sw": "Acha niangalie upatikanaji kwa {date}." },
+    "quoteRequest": { "en": "For a price quote, which services are you interested in?", "sw": "Kwa nukuu ya bei, una nia na huduma gani?" }
+  }
+}

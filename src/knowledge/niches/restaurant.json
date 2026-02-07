@@ -1,0 +1,32 @@
+{
+  "key": "restaurant",
+  "label": { "en": "Restaurant", "sw": "Mkahawa" },
+  "primer": {
+    "en": "You are an AI assistant for a restaurant business. Help customers with menu inquiries, reservations, orders, delivery, and general dining questions. Always confirm order details and totals before finalizing.",
+    "sw": "Wewe ni msaidizi wa AI kwa biashara ya mkahawa. Saidia wateja kuhusu menyu, nafasi za kuhifadhi, maagizo, uwasilishaji, na maswali ya jumla ya kula. Daima thibitisha maelezo ya agizo na jumla kabla ya kukamilisha."
+  },
+  "intents": [
+    { "key": "menu_price", "description": { "en": "Customer asks about menu item prices", "sw": "Mteja anauliza bei za menyu" }, "exampleQuestions": ["How much is the chicken?", "Bei ya kuku ni ngapi?"], "responseTemplate": { "en": "Here are the prices for {item}. Would you like to place an order?", "sw": "Hizi ni bei za {item}. Je, ungependa kuagiza?" } },
+    { "key": "order_placement", "description": { "en": "Customer wants to place an order", "sw": "Mteja anataka kuagiza" }, "exampleQuestions": ["I want to order food", "Nataka kuagiza chakula"], "responseTemplate": { "en": "Great! What would you like to order? Here's our menu:", "sw": "Vizuri! Ungependa kuagiza nini? Hii ni menyu yetu:" } },
+    { "key": "delivery_info", "description": { "en": "Customer asks about delivery", "sw": "Mteja anauliza kuhusu uwasilishaji" }, "exampleQuestions": ["Do you deliver?", "Mnawasilisha?"], "responseTemplate": { "en": "Let me check our delivery options for your area.", "sw": "Acha nione chaguo za uwasilishaji kwa eneo lako." } },
+    { "key": "reservation", "description": { "en": "Customer wants to make a reservation", "sw": "Mteja anataka kuhifadhi nafasi" }, "exampleQuestions": ["I'd like to book a table", "Nataka kuhifadhi meza"], "responseTemplate": { "en": "I'd be happy to help with a reservation. For how many guests and when?", "sw": "Nitafurahi kusaidia na uhifadhi. Wageni wangapi na lini?" } },
+    { "key": "hours", "description": { "en": "Customer asks about operating hours", "sw": "Mteja anauliza saa za kufungua" }, "exampleQuestions": ["What time do you open?", "Mnafungua saa ngapi?"], "responseTemplate": { "en": "Our operating hours are:", "sw": "Saa zetu za kufungua ni:" } }
+  ],
+  "onboardingFields": [
+    { "key": "cuisineType", "type": "select", "required": true, "label": { "en": "Cuisine Type", "sw": "Aina ya Chakula" }, "help": { "en": "What type of food do you serve?", "sw": "Mnatoa aina gani ya chakula?" }, "options": [{ "value": "african", "label": { "en": "African", "sw": "Kiafrika" } }, { "value": "indian", "label": { "en": "Indian", "sw": "Kihindi" } }, { "value": "chinese", "label": { "en": "Chinese", "sw": "Kichina" } }, { "value": "fast_food", "label": { "en": "Fast Food", "sw": "Vyakula vya Haraka" } }, { "value": "mixed", "label": { "en": "Mixed/Fusion", "sw": "Mchanganyiko" } }] },
+    { "key": "hasDelivery", "type": "boolean", "required": true, "label": { "en": "Do you offer delivery?", "sw": "Je, mnatoa uwasilishaji?" }, "help": { "en": "Whether your restaurant delivers food", "sw": "Kama mkahawa wako unawasilisha chakula" } },
+    { "key": "averageMealPrice", "type": "text", "required": false, "label": { "en": "Average Meal Price Range", "sw": "Kiwango cha Bei ya Wastani" }, "help": { "en": "e.g. 5,000 - 15,000 TZS", "sw": "mfano 5,000 - 15,000 TZS" } },
+    { "key": "seatingCapacity", "type": "text", "required": false, "label": { "en": "Seating Capacity", "sw": "Uwezo wa Viti" }, "help": { "en": "How many guests can you seat?", "sw": "Mnaweza kukaa wageni wangapi?" } },
+    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sat 8am-10pm", "sw": "mfano Jumatatu-Jumamosi 8am-10pm" } }
+  ],
+  "rules": {
+    "neverInvent": ["price", "stock", "eta", "address", "paymentMethods", "ingredients", "allergens"],
+    "escalateIf": ["refund_request", "complaint", "food_poisoning", "allergic_reaction"],
+    "style": ["WhatsApp short messages", "use bullets for menu items", "confirm totals before payment", "mention delivery time estimates only if known"]
+  },
+  "templates": {
+    "orderConfirm": { "en": "Your order summary:\n{items}\nTotal: {currency} {total}\n\nShall I confirm this order?", "sw": "Muhtasari wa agizo lako:\n{items}\nJumla: {currency} {total}\n\nNikithibitishe agizo hili?" },
+    "availabilityCheck": { "en": "Let me check if {item} is currently available.", "sw": "Acha niangalie kama {item} inapatikana sasa." },
+    "quoteRequest": { "en": "For catering quotes, I'll need:\n- Number of guests\n- Date and time\n- Preferred menu items", "sw": "Kwa nukuu za upishi, nitahitaji:\n- Idadi ya wageni\n- Tarehe na saa\n- Vyakula unavyopendelea" }
+  }
+}

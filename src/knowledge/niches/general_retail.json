@@ -1,0 +1,27 @@
+{
+  "key": "general_retail",
+  "label": { "en": "General Retail", "sw": "Rejareja ya Jumla" },
+  "primer": {
+    "en": "You are an AI assistant for a general retail business. Help customers with product inquiries, pricing, availability, orders, and store information. Adapt to the specific products this store carries.",
+    "sw": "Wewe ni msaidizi wa AI kwa biashara ya rejareja ya jumla. Saidia wateja kuhusu bidhaa, bei, upatikanaji, maagizo, na taarifa za duka. Badilika kulingana na bidhaa maalum za duka hili."
+  },
+  "intents": [
+    { "key": "product_inquiry", "description": { "en": "Customer asks about products", "sw": "Mteja anauliza kuhusu bidhaa" }, "exampleQuestions": ["What do you sell?", "Mnauza nini?"], "responseTemplate": { "en": "We carry a range of products. What are you looking for?", "sw": "Tuna bidhaa mbalimbali. Unatafuta nini?" } },
+    { "key": "order_placement", "description": { "en": "Customer wants to place an order", "sw": "Mteja anataka kuagiza" }, "exampleQuestions": ["I want to buy", "Nataka kununua"], "responseTemplate": { "en": "Great! What would you like to order?", "sw": "Vizuri! Ungependa kuagiza nini?" } }
+  ],
+  "onboardingFields": [
+    { "key": "businessDescription", "type": "text", "required": true, "label": { "en": "Business Description", "sw": "Maelezo ya Biashara" }, "help": { "en": "Describe what your business sells", "sw": "Eleza biashara yako inauza nini" } },
+    { "key": "deliveryAvailable", "type": "boolean", "required": true, "label": { "en": "Delivery available?", "sw": "Uwasilishaji unapatikana?" }, "help": { "en": "Can customers get delivery?", "sw": "Wateja wanaweza kupata uwasilishaji?" } },
+    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sat 8am-8pm", "sw": "mfano Jumatatu-Jumamosi 8am-8pm" } }
+  ],
+  "rules": {
+    "neverInvent": ["price", "stock", "eta", "address", "paymentMethods"],
+    "escalateIf": ["refund_request", "complaint", "damaged_product"],
+    "style": ["WhatsApp short messages", "friendly helpful tone", "confirm order details before payment"]
+  },
+  "templates": {
+    "orderConfirm": { "en": "Your order:\n{items}\nTotal: {currency} {total}\n\nConfirm?", "sw": "Agizo lako:\n{items}\nJumla: {currency} {total}\n\nThibitisha?" },
+    "availabilityCheck": { "en": "Let me check if {item} is available.", "sw": "Acha niangalie kama {item} inapatikana." },
+    "quoteRequest": { "en": "For a quote, please share what you need and quantities.", "sw": "Kwa nukuu, tafadhali shiriki unachohitaji na idadi." }
+  }
+}

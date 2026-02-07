@@ -1,0 +1,27 @@
+{
+  "key": "beauty_supply",
+  "label": { "en": "Beauty Supply Store", "sw": "Duka la Vipodozi" },
+  "primer": {
+    "en": "You are an AI assistant for a beauty supply store. Help customers with product recommendations, pricing, availability, and beauty tips. Be knowledgeable about product ingredients and usage when information is available.",
+    "sw": "Wewe ni msaidizi wa AI kwa duka la vipodozi. Saidia wateja na mapendekezo ya bidhaa, bei, upatikanaji, na vidokezo vya urembo. Kuwa na ujuzi kuhusu viambato vya bidhaa na matumizi wakati taarifa zinapatikana."
+  },
+  "intents": [
+    { "key": "product_recommendation", "description": { "en": "Customer wants product recommendations", "sw": "Mteja anataka mapendekezo ya bidhaa" }, "exampleQuestions": ["What's good for dry hair?", "Nini kizuri kwa nywele kavu?"], "responseTemplate": { "en": "For {concern}, I'd recommend checking out:", "sw": "Kwa {concern}, ningependekeza kuangalia:" } },
+    { "key": "product_availability", "description": { "en": "Customer asks about product availability", "sw": "Mteja anauliza upatikanaji wa bidhaa" }, "exampleQuestions": ["Do you have Dark & Lovely?", "Mna Dark & Lovely?"], "responseTemplate": { "en": "Let me check if we have {brand} in stock.", "sw": "Acha niangalie kama tuna {brand} kwenye hifadhi." } }
+  ],
+  "onboardingFields": [
+    { "key": "productTypes", "type": "multi", "required": true, "label": { "en": "Product Types", "sw": "Aina za Bidhaa" }, "help": { "en": "What beauty products do you carry?", "sw": "Mna bidhaa gani za urembo?" }, "options": [{ "value": "hair", "label": { "en": "Hair Products", "sw": "Bidhaa za Nywele" } }, { "value": "skin", "label": { "en": "Skincare", "sw": "Utunzaji wa Ngozi" } }, { "value": "makeup", "label": { "en": "Makeup", "sw": "Mapambo" } }, { "value": "nails", "label": { "en": "Nail Products", "sw": "Bidhaa za Kucha" } }, { "value": "fragrance", "label": { "en": "Fragrances", "sw": "Manukato" } }] },
+    { "key": "topBrands", "type": "text", "required": false, "label": { "en": "Top Brands Carried", "sw": "Bidhaa Kuu Zinazouzwa" }, "help": { "en": "List your most popular brands", "sw": "Orodhesha chapa zako maarufu" } },
+    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sat 9am-7pm", "sw": "mfano Jumatatu-Jumamosi 9am-7pm" } }
+  ],
+  "rules": {
+    "neverInvent": ["price", "stock", "ingredients", "medicalAdvice", "allergenInfo"],
+    "escalateIf": ["allergic_reaction", "complaint", "refund_request", "skin_reaction"],
+    "style": ["WhatsApp short messages", "friendly helpful tone", "suggest alternatives when items are out of stock"]
+  },
+  "templates": {
+    "orderConfirm": { "en": "Your order:\n{items}\nTotal: {currency} {total}\n\nConfirm?", "sw": "Agizo lako:\n{items}\nJumla: {currency} {total}\n\nThibitisha?" },
+    "availabilityCheck": { "en": "Let me check if {item} is currently in stock.", "sw": "Acha niangalie kama {item} inapatikana sasa." },
+    "quoteRequest": { "en": "What products are you looking for? I can help find the best options.", "sw": "Unatafuta bidhaa gani? Naweza kusaidia kupata chaguo bora." }
+  }
+}

@@ -12,7 +12,19 @@ The user prefers clear, concise communication and detailed explanations when nec
 The backend is built with Express.js and TypeScript, using Prisma 7 with `@prisma/adapter-pg` for ORM. PostgreSQL serves as the primary database, and OpenAI (via Replit AI Integrations) is used for AI functionalities.
 
 ### Data Models
-The database schema supports multi-business functionality with models for `businesses`, `catalog_categories`, and `catalog_items`, allowing flexible definitions for various business types (RESTAURANT, RETAIL, CLINIC, SALON, GOV, OTHER). It includes backward-compatible legacy models for `restaurants`, `menu_categories`, and `menu_items`. Internationalization (i18n) is handled by `messages`, `translation_cache`, and `translation_usage_daily` models, facilitating multi-language support with translation caching and quota management. WhatsApp integration is managed through `whatsapp_connections`, `whatsapp_messages`, `whatsapp_drafts`, and `whatsapp_webhook_events`.
+The database schema supports multi-business functionality with models for `businesses`, `catalog_categories`, and `catalog_items`, allowing flexible definitions for various business types (RESTAURANT, RETAIL, CLINIC, SALON, GOV, OTHER). It includes backward-compatible legacy models for `restaurants`, `menu_categories`, and `menu_items`. Internationalization (i18n) is handled by `messages`, `translation_cache`, and `translation_usage_daily` models, facilitating multi-language support with translation caching and quota management. WhatsApp integration is managed through `whatsapp_connections`, `whatsapp_messages`, `whatsapp_drafts`, and `whatsapp_webhook_events`. The `business_profiles` model includes `websiteFacts` (Json) for storing scraped website data used in AI context building.
+
+### Niche Knowledge Packs
+The system uses JSON-based knowledge packs stored in `src/knowledge/niches/` for 14 business types: restaurant, retail, clinic, salon, government, other, hardware, electronics, beauty_supply, clothing_shoes, home_decor, pharmacy, services, general_retail. Each pack contains:
+- Localized labels and primer (EN/SW)
+- Intent definitions with example questions and response templates
+- Onboarding fields (what info the business needs to provide)
+- Safety rules (neverInvent, escalateIf, style)
+- Message templates (orderConfirm, availabilityCheck, quoteRequest)
+
+The `KnowledgePackService` (`src/services/knowledgePacks.ts`) loads, validates, and caches all packs at startup. On startup, niches are also seeded into the `niches` and `niche_templates` DB tables via upsert.
+
+The `buildBusinessContext()` helper in `src/promptBuilder.ts` merges: niche pack + onboarding answers + website facts + products + FAQs + policies + knowledge sources into a unified AI context. Missing required onboarding fields are tracked in `missingCriticalFields` and injected into the system prompt as safety guardrails.
 
 ### API Endpoints
 The API provides a comprehensive set of endpoints:
@@ -20,6 +32,8 @@ The API provides a comprehensive set of endpoints:
 -   **Admin Authentication**: Endpoints for admin registration, login, logout, and retrieving admin information.
 -   **Business Management**: CRUD operations for businesses and setting active businesses.
 -   **Catalog Management**: CRUD operations for categories and items within a business's catalog.
+-   **Niche Knowledge Packs**: `GET /api/niches` (list all with EN/SW labels), `GET /api/niches/:key` (full pack), `GET /api/niches/:id/template` (legacy compatibility).
+-   **Business Profile Niche**: `POST /api/business/:id/niche` (set niche key), `POST /api/business/:id/onboarding-answers` (save/merge answers), `GET /api/business/:id/ai-context` (merged context for debugging).
 -   **i18n / Translation**: Endpoints for language detection, translation, managing language settings, and tracking translation usage.
 -   **Knowledge Upload**: Functionality to upload knowledge sources (PDF/images) and scrape websites for AI knowledge base population.
 -   **Legacy Endpoints**: Backward-compatible endpoints for restaurant and menu management.

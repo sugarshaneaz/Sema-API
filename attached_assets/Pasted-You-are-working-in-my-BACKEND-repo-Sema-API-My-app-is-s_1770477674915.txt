@@ -1,0 +1,78 @@
+You are working in my BACKEND repo (Sema-API). My app is split: frontend (Expo) and backend (API). I need “Niche Knowledge Packs” so the AI can answer better per business type without model training. Implement a clean, production-ready solution.
+
+GOAL
+- Add a per-niche knowledge base (“Knowledge Pack”) that the AI can load at runtime based on the business’s selected niche.
+- Merge that niche pack with the business’s onboarding answers + website scraped facts (already exists or will exist) to produce consistent AI replies.
+- Never hallucinate: price/stock/ETA/address/payment/warranty/medical/legal claims. If missing, ask 1–2 questions then offer options, or escalate.
+
+BUSINESS TYPES (14)
+Restaurant, Retail, Clinic, Salon, Government, Other, Hardware, Electronics, Beauty Supply, Clothing/Shoes, Home Decor, Pharmacy, Services, General Retail
+
+WHAT TO BUILD
+
+1) Data structures (simple, versionable)
+- Create `server/src/knowledge/niches/` containing one JSON file per niche, e.g. `restaurant.json`, `hardware.json`...
+- Each niche JSON should follow this structure:
+
+{
+  "key": "restaurant",
+  "label": { "en": "Restaurant", "sw": "..." },
+  "primer": { "en": "...", "sw": "..." },
+  "intents": [
+     { "key":"menu_price", "description":{...}, "exampleQuestions":[...], "responseTemplate":{...} }
+  ],
+  "onboardingFields": [
+     { "key":"cuisineType", "type":"select|text|multi|boolean", "required": true/false, "label":{...}, "help":{...}, "options":[{ "value":"", "label":{...}}] }
+  ],
+  "rules": {
+     "neverInvent": ["price","stock","eta","address","paymentMethods","warranty","medicalAdvice","legalAdvice"],
+     "escalateIf": ["refund_request","complaint","medical_urgent","government_procurement","harassment"],
+     "style": ["WhatsApp short messages","bullets","confirm totals before payment"]
+  },
+  "templates": {
+     "orderConfirm": { "en":"...", "sw":"..." },
+     "availabilityCheck": { "en":"...", "sw":"..." },
+     "quoteRequest": { "en":"...", "sw":"..." }
+  }
+}
+
+- Populate each niche with the “basic knowledge pack” content (primer, top intents, onboarding fields, templates, and rules). Keep it concise but useful.
+
+2) Backend service to load packs
+- Add `KnowledgePackService` that loads all niche JSON packs at startup, validates required fields, and exposes:
+  - `getAllNiches()` -> list with keys + labels
+  - `getPack(nicheKey)` -> full pack
+
+3) Business profile merge
+- Ensure each Business (or equivalent) stores:
+  - `nicheKey`
+  - `onboardingAnswers` (JSON)
+  - `websiteFacts` (JSON) (if you have a scraper)
+- Add helper `buildBusinessContext(businessId)` that returns:
+  - niche pack + onboarding answers + website facts + business metadata (name, address, hours, payments if available)
+- Keep it deterministic and safe; never synthesize missing facts.
+
+4) API endpoints
+- GET `/api/niches` -> returns list of niche keys + localized labels (en/sw)
+- GET `/api/niches/:key` -> returns full knowledge pack (admin use)
+- POST `/api/business/:id/niche` -> set niche key
+- POST `/api/business/:id/onboarding-answers` -> save answers JSON (merge update)
+- GET `/api/business/:id/ai-context` -> returns merged context (for debugging)
+- (If you have AI endpoint) modify it so it:
+  - loads merged context
+  - injects it into system prompt as “Niche Pack + Business Facts”
+  - includes safety rules: never invent missing facts; ask clarifying questions
+
+5) Safety behavior (must implement)
+- Before AI responds, enforce a guardrail:
+  - If user asks price/stock/ETA/address/payment and those fields are missing, AI must ask for clarification or say “I can confirm and get back to you” rather than invent.
+- Add tests (basic) to ensure missing facts triggers questions not fake values.
+
+6) Translations
+- Provide EN + Swahili for niche labels, common templates, and key field labels/help text. (Simple translations are okay, but complete.)
+
+OUTPUT
+- Implement code + JSON packs.
+- Tell me which files changed.
+- Provide example response payloads for `/api/niches` and `/api/business/:id/ai-context`.
+- Ensure it works without changing my frontend yet (frontend will call these endpoints next).

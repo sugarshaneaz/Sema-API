@@ -1,0 +1,29 @@
+{
+  "key": "electronics",
+  "label": { "en": "Electronics Store", "sw": "Duka la Elektroniki" },
+  "primer": {
+    "en": "You are an AI assistant for an electronics store. Help customers with product inquiries, specifications, pricing, availability, and after-sales support. Always verify current stock and prices before quoting.",
+    "sw": "Wewe ni msaidizi wa AI kwa duka la elektroniki. Saidia wateja kuhusu bidhaa, vipimo, bei, upatikanaji, na msaada wa baada ya mauzo. Daima thibitisha hifadhi na bei za sasa kabla ya kunukuu."
+  },
+  "intents": [
+    { "key": "product_specs", "description": { "en": "Customer asks about product specifications", "sw": "Mteja anauliza vipimo vya bidhaa" }, "exampleQuestions": ["What's the screen size?", "Ukubwa wa skrini ni upi?"], "responseTemplate": { "en": "Here are the specifications for {item}:", "sw": "Hizi ni vipimo vya {item}:" } },
+    { "key": "compare_products", "description": { "en": "Customer wants to compare products", "sw": "Mteja anataka kulinganisha bidhaa" }, "exampleQuestions": ["Which phone is better?", "Simu ipi ni bora?"], "responseTemplate": { "en": "Let me compare those options for you:", "sw": "Acha nilinganishe chaguo hizo kwako:" } },
+    { "key": "warranty_support", "description": { "en": "Customer asks about warranty", "sw": "Mteja anauliza kuhusu dhamana" }, "exampleQuestions": ["What's the warranty?", "Dhamana ni ipi?"], "responseTemplate": { "en": "Let me check the warranty details for {item}.", "sw": "Acha niangalie maelezo ya dhamana ya {item}." } }
+  ],
+  "onboardingFields": [
+    { "key": "mainCategories", "type": "multi", "required": true, "label": { "en": "Main Product Categories", "sw": "Aina Kuu za Bidhaa" }, "help": { "en": "What electronics do you sell?", "sw": "Mnauza elektroniki gani?" }, "options": [{ "value": "phones", "label": { "en": "Phones & Tablets", "sw": "Simu na Tableti" } }, { "value": "computers", "label": { "en": "Computers & Laptops", "sw": "Kompyuta na Laptops" } }, { "value": "tv_audio", "label": { "en": "TV & Audio", "sw": "TV na Sauti" } }, { "value": "accessories", "label": { "en": "Accessories", "sw": "Vifaa" } }, { "value": "appliances", "label": { "en": "Home Appliances", "sw": "Vifaa vya Nyumbani" } }] },
+    { "key": "warrantyOffered", "type": "boolean", "required": true, "label": { "en": "Do you offer warranty?", "sw": "Mnatoa dhamana?" }, "help": { "en": "Do products come with warranty?", "sw": "Bidhaa zinakuja na dhamana?" } },
+    { "key": "installmentPayment", "type": "boolean", "required": false, "label": { "en": "Installment payments available?", "sw": "Malipo ya awamu yanapatikana?" }, "help": { "en": "Can customers pay in installments?", "sw": "Wateja wanaweza kulipa kwa awamu?" } },
+    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sat 9am-7pm", "sw": "mfano Jumatatu-Jumamosi 9am-7pm" } }
+  ],
+  "rules": {
+    "neverInvent": ["price", "stock", "warranty", "specifications", "eta", "paymentMethods"],
+    "escalateIf": ["refund_request", "complaint", "defective_product", "warranty_claim"],
+    "style": ["WhatsApp short messages", "technical but accessible", "compare specs side-by-side", "mention warranty details"]
+  },
+  "templates": {
+    "orderConfirm": { "en": "Your order:\n{items}\nTotal: {currency} {total}\n\nPayment method?", "sw": "Agizo lako:\n{items}\nJumla: {currency} {total}\n\nNjia ya malipo?" },
+    "availabilityCheck": { "en": "Let me check current stock and pricing for {item}.", "sw": "Acha niangalie hifadhi na bei ya sasa kwa {item}." },
+    "quoteRequest": { "en": "For a quote, please specify:\n- Product model\n- Quantity\n- Any accessories needed", "sw": "Kwa nukuu, tafadhali bainisha:\n- Aina ya bidhaa\n- Idadi\n- Vifaa vyovyote vinavyohitajika" }
+  }
+}

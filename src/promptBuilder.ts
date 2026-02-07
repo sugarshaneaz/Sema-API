@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { PrismaClient } from "@prisma/client";
+import type { KnowledgePack } from "./services/knowledgePacks";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -27,6 +28,7 @@ interface BusinessContext {
   languagePreference: string;
   tonePreference: string;
   template: NicheTemplate | null;
+  nichePack: KnowledgePack | null;
   products: { name: string; price: number | null; currency: string; category: string | null }[];
   faqs: { question: string; answer: string }[];
   policies: {
@@ -37,11 +39,95 @@ interface BusinessContext {
   } | null;
   knowledgeSources: { type: string; title: string; contentText: string }[];
   intakeAnswers: Record<string, string>;
+  websiteFacts: Record<string, any>;
+  missingCriticalFields: string[];
+}
+
+export interface MergedAIContext {
+  businessId: string;
+  businessName: string | null;
+  nicheKey: string | null;
+  nicheLabel: { en: string; sw: string } | null;
+  languagePreference: string;
+  tonePreference: string;
+  primer: string | null;
+  onboardingFields: any[];
+  onboardingAnswers: Record<string, any>;
+  websiteFacts: Record<string, any>;
+  products: { name: string; price: number | null; currency: string; category: string | null }[];
+  faqs: { question: string; answer: string }[];
+  policies: any;
+  knowledgeSources: { type: string; title: string; contentText: string }[];
+  safetyRules: {
+    neverInvent: string[];
+    escalateIf: string[];
+    style: string[];
+  } | null;
+  templates: any;
+  missingCriticalFields: string[];
+}
+
+interface KnowledgePackServiceLike {
+  getPack(nicheKey: string): KnowledgePack | null;
+}
+
+export function buildBusinessContext(
+  profile: any,
+  packService: KnowledgePackServiceLike
+): MergedAIContext {
+  const nicheKey = profile.nicheId || null;
+  const pack = nicheKey ? packService.getPack(nicheKey) : null;
+  const lang = profile.languagePreference === "sw" ? "sw" : "en";
+
+  const intakeAnswers = (profile.intakeAnswers as Record<string, any>) || {};
+  const websiteFacts = (profile.websiteFacts as Record<string, any>) || {};
+
+  const missingCriticalFields: string[] = [];
+  if (pack) {
+    for (const field of pack.onboardingFields) {
+      if (field.required && !intakeAnswers[field.key]) {
+        missingCriticalFields.push(field.label[lang] || field.label.en);
+      }
+    }
+  }
+
+  return {
+    businessId: profile.id,
+    businessName: profile.businessName,
+    nicheKey,
+    nicheLabel: pack?.label || null,
+    languagePreference: profile.languagePreference,
+    tonePreference: profile.tonePreference,
+    primer: pack ? pack.primer[lang] || pack.primer.en : null,
+    onboardingFields: pack?.onboardingFields || [],
+    onboardingAnswers: intakeAnswers,
+    websiteFacts,
+    products: (profile.products || []).map((p: any) => ({
+      name: p.name,
+      price: p.price,
+      currency: p.currency,
+      category: p.category,
+    })),
+    faqs: (profile.faqItems || []).map((f: any) => ({
+      question: f.question,
+      answer: f.answer,
+    })),
+    policies: profile.policies || null,
+    knowledgeSources: (profile.knowledgeSources || []).map((k: any) => ({
+      type: k.type,
+      title: k.title,
+      contentText: k.contentText,
+    })),
+    safetyRules: pack?.rules || null,
+    templates: pack?.templates || null,
+    missingCriticalFields,
+  };
 }
 
 export async function loadBusinessContext(
   prisma: PrismaClient,
-  connectionId: string
+  connectionId: string,
+  packService?: KnowledgePackServiceLike
 ): Promise<BusinessContext | null> {
   const connection = await prisma.whatsappConnection.findUnique({
     where: { id: connectionId },
@@ -64,6 +150,19 @@ export async function loadBusinessContext(
 
   const profile = connection.businessProfile;
   const template = profile.niche?.template?.templateJson as NicheTemplate | null;
+  const nichePack = packService && profile.nicheId ? packService.getPack(profile.nicheId) : null;
+
+  const intakeAnswers = (profile.intakeAnswers as Record<string, string>) || {};
+  const websiteFacts = (profile.websiteFacts as Record<string, any>) || {};
+
+  const missingCriticalFields: string[] = [];
+  if (nichePack) {
+    for (const field of nichePack.onboardingFields) {
+      if (field.required && !intakeAnswers[field.key]) {
+        missingCriticalFields.push(field.label.en);
+      }
+    }
+  }
 
   return {
     businessId: profile.id,
@@ -72,6 +171,7 @@ export async function loadBusinessContext(
     languagePreference: profile.languagePreference,
     tonePreference: profile.tonePreference,
     template,
+    nichePack,
     products: profile.products.map((p) => ({
       name: p.name,
       price: p.price,
@@ -88,19 +188,34 @@ export async function loadBusinessContext(
       title: k.title,
       contentText: k.contentText,
     })),
-    intakeAnswers: (profile.intakeAnswers as Record<string, string>) || {},
+    intakeAnswers,
+    websiteFacts,
+    missingCriticalFields,
   };
 }
 
 export function checkSafetyTriggers(
   text: string,
-  template: NicheTemplate | null
+  template: NicheTemplate | null,
+  nichePack?: KnowledgePack | null
 ): { shouldEscalate: boolean; shouldRefuse: boolean; message?: string } {
+  const lowerText = text.toLowerCase();
+
+  if (nichePack?.rules?.escalateIf) {
+    for (const trigger of nichePack.rules.escalateIf) {
+      if (lowerText.includes(trigger.replace(/_/g, " ").toLowerCase())) {
+        return {
+          shouldEscalate: true,
+          shouldRefuse: false,
+          message: "Let me connect you with someone who can help with this.",
+        };
+      }
+    }
+  }
+
   if (!template?.safetyRules) {
     return { shouldEscalate: false, shouldRefuse: false };
   }
-
-  const lowerText = text.toLowerCase();
 
   for (const trigger of template.safetyRules.refuseTriggers || []) {
     if (lowerText.includes(trigger.toLowerCase())) {
@@ -135,6 +250,29 @@ export function buildSystemPrompt(context: BusinessContext): string {
   sections.push("- Always end your response with a clear next action or question");
   sections.push(`- Communicate in a ${context.tonePreference} tone`);
   sections.push(`- Primary language preference: ${context.languagePreference === "sw" ? "Swahili" : context.languagePreference === "mix" ? "Mix of Swahili and English" : "English"}`);
+
+  if (context.nichePack) {
+    const lang = context.languagePreference === "sw" ? "sw" : "en";
+    sections.push("\n=== NICHE KNOWLEDGE PACK ===");
+    sections.push(`Niche: ${context.nichePack.label[lang] || context.nichePack.label.en}`);
+    sections.push(`Role: ${context.nichePack.primer[lang] || context.nichePack.primer.en}`);
+
+    sections.push("\nNiche Style Rules:");
+    for (const rule of context.nichePack.rules.style) {
+      sections.push(`- ${rule}`);
+    }
+
+    sections.push("\nNEVER INVENT OR MAKE UP:");
+    for (const item of context.nichePack.rules.neverInvent) {
+      sections.push(`- ${item}`);
+    }
+    sections.push("If a customer asks about any of the above and the information is not available in your context, you MUST say 'Let me check and get back to you' or ask a clarifying question. NEVER make up values.");
+
+    sections.push("\nESCALATE TO HUMAN IF:");
+    for (const trigger of context.nichePack.rules.escalateIf) {
+      sections.push(`- ${trigger.replace(/_/g, " ")}`);
+    }
+  }
 
   if (context.template) {
     sections.push("\n=== NICHE RULES ===");
@@ -173,9 +311,33 @@ export function buildSystemPrompt(context: BusinessContext): string {
   }
 
   if (Object.keys(context.intakeAnswers).length > 0) {
+    sections.push("\nOnboarding Answers:");
     for (const [question, answer] of Object.entries(context.intakeAnswers)) {
       sections.push(`${question}: ${answer}`);
     }
+  }
+
+  if (Object.keys(context.websiteFacts).length > 0) {
+    sections.push("\nWebsite Facts:");
+    for (const [key, value] of Object.entries(context.websiteFacts)) {
+      if (typeof value === "string") {
+        sections.push(`${key}: ${value}`);
+      } else {
+        sections.push(`${key}: ${JSON.stringify(value)}`);
+      }
+    }
+  }
+
+  if (context.missingCriticalFields.length > 0) {
+    sections.push("\n=== MISSING INFORMATION WARNING ===");
+    sections.push("The following critical business information has NOT been provided:");
+    for (const field of context.missingCriticalFields) {
+      sections.push(`- ${field}`);
+    }
+    sections.push("If a customer asks about any of these topics, you MUST NOT make up answers. Instead:");
+    sections.push("1. Acknowledge you don't have that specific information yet");
+    sections.push("2. Ask the customer 1-2 clarifying questions");
+    sections.push("3. Offer to check and get back to them");
   }
 
   if (context.policies) {
@@ -213,6 +375,9 @@ export function buildSystemPrompt(context: BusinessContext): string {
     if (context.products.length > 50) {
       sections.push(`\n(... and ${context.products.length - 50} more items)`);
     }
+  } else {
+    sections.push("\n=== CATALOG ===");
+    sections.push("No products/services have been added yet. If a customer asks about specific products or prices, let them know you'll check with the business and get back to them.");
   }
 
   if (context.faqs.length > 0) {

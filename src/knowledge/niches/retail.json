@@ -1,0 +1,29 @@
+{
+  "key": "retail",
+  "label": { "en": "Retail Store", "sw": "Duka la Rejareja" },
+  "primer": {
+    "en": "You are an AI assistant for a retail store. Help customers with product inquiries, pricing, availability, orders, and store information. Always verify stock before confirming availability.",
+    "sw": "Wewe ni msaidizi wa AI kwa duka la rejareja. Saidia wateja kuhusu bidhaa, bei, upatikanaji, maagizo, na taarifa za duka. Daima thibitisha hifadhi kabla ya kuthibitisha upatikanaji."
+  },
+  "intents": [
+    { "key": "product_inquiry", "description": { "en": "Customer asks about a product", "sw": "Mteja anauliza kuhusu bidhaa" }, "exampleQuestions": ["Do you have phones?", "Mna simu?"], "responseTemplate": { "en": "Let me check what we have in stock for {item}.", "sw": "Acha niangalie tunacho kwenye hifadhi kwa {item}." } },
+    { "key": "price_check", "description": { "en": "Customer asks about pricing", "sw": "Mteja anauliza bei" }, "exampleQuestions": ["How much does it cost?", "Bei yake ni ngapi?"], "responseTemplate": { "en": "The price for {item} is {price}. Would you like to purchase?", "sw": "Bei ya {item} ni {price}. Je, ungependa kununua?" } },
+    { "key": "store_hours", "description": { "en": "Customer asks about store hours", "sw": "Mteja anauliza saa za duka" }, "exampleQuestions": ["When are you open?", "Mnafungua lini?"], "responseTemplate": { "en": "Our store hours are:", "sw": "Saa za duka letu ni:" } }
+  ],
+  "onboardingFields": [
+    { "key": "storeType", "type": "select", "required": true, "label": { "en": "Store Type", "sw": "Aina ya Duka" }, "help": { "en": "What kind of products do you sell?", "sw": "Mnauza aina gani ya bidhaa?" }, "options": [{ "value": "general", "label": { "en": "General Store", "sw": "Duka la Jumla" } }, { "value": "specialty", "label": { "en": "Specialty Store", "sw": "Duka Maalum" } }, { "value": "supermarket", "label": { "en": "Supermarket", "sw": "Supamaketi" } }] },
+    { "key": "hasOnlineOrders", "type": "boolean", "required": true, "label": { "en": "Accept online orders?", "sw": "Mnakubali maagizo ya mtandaoni?" }, "help": { "en": "Can customers order via WhatsApp?", "sw": "Wateja wanaweza kuagiza kupitia WhatsApp?" } },
+    { "key": "deliveryAvailable", "type": "boolean", "required": false, "label": { "en": "Delivery available?", "sw": "Uwasilishaji unapatikana?" }, "help": { "en": "Do you deliver products?", "sw": "Mnawasilisha bidhaa?" } },
+    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sat 8am-8pm", "sw": "mfano Jumatatu-Jumamosi 8am-8pm" } }
+  ],
+  "rules": {
+    "neverInvent": ["price", "stock", "eta", "address", "paymentMethods", "warranty"],
+    "escalateIf": ["refund_request", "complaint", "damaged_product", "wrong_item"],
+    "style": ["WhatsApp short messages", "list products with prices", "confirm quantities before checkout"]
+  },
+  "templates": {
+    "orderConfirm": { "en": "Your order:\n{items}\nTotal: {currency} {total}\n\nConfirm to proceed?", "sw": "Agizo lako:\n{items}\nJumla: {currency} {total}\n\nThibitisha kuendelea?" },
+    "availabilityCheck": { "en": "Let me check if {item} is in stock.", "sw": "Acha niangalie kama {item} ipo kwenye hifadhi." },
+    "quoteRequest": { "en": "For bulk orders, please share:\n- Items needed\n- Quantities\n- Delivery location", "sw": "Kwa maagizo ya wingi, tafadhali shiriki:\n- Bidhaa zinazohitajika\n- Idadi\n- Mahali pa uwasilishaji" }
+  }
+}

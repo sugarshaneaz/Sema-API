@@ -1,0 +1,28 @@
+{
+  "key": "home_decor",
+  "label": { "en": "Home Decor & Furniture", "sw": "Mapambo na Samani za Nyumbani" },
+  "primer": {
+    "en": "You are an AI assistant for a home decor and furniture store. Help customers with product inquiries, design suggestions, pricing, delivery options, and custom orders. Be helpful with interior design tips when asked.",
+    "sw": "Wewe ni msaidizi wa AI kwa duka la mapambo na samani za nyumbani. Saidia wateja kuhusu bidhaa, mapendekezo ya muundo, bei, chaguo za uwasilishaji, na maagizo maalum. Kuwa msaidizi na vidokezo vya muundo wa ndani unapoulizwa."
+  },
+  "intents": [
+    { "key": "product_inquiry", "description": { "en": "Customer asks about furniture/decor", "sw": "Mteja anauliza kuhusu samani/mapambo" }, "exampleQuestions": ["Do you have sofas?", "Mna sofa?"], "responseTemplate": { "en": "Here's what we have for {category}:", "sw": "Hivi ndivyo tunavyo kwa {category}:" } },
+    { "key": "custom_order", "description": { "en": "Customer wants a custom item", "sw": "Mteja anataka bidhaa maalum" }, "exampleQuestions": ["Can you make custom furniture?", "Mnaweza kutengeneza samani maalum?"], "responseTemplate": { "en": "We can discuss custom options! What do you have in mind?", "sw": "Tunaweza kujadili chaguo maalum! Una mawazo gani?" } }
+  ],
+  "onboardingFields": [
+    { "key": "productTypes", "type": "multi", "required": true, "label": { "en": "Product Types", "sw": "Aina za Bidhaa" }, "help": { "en": "What do you sell?", "sw": "Mnauza nini?" }, "options": [{ "value": "furniture", "label": { "en": "Furniture", "sw": "Samani" } }, { "value": "decor", "label": { "en": "Decor Items", "sw": "Vitu vya Mapambo" } }, { "value": "curtains", "label": { "en": "Curtains & Blinds", "sw": "Mapazia" } }, { "value": "kitchenware", "label": { "en": "Kitchenware", "sw": "Vifaa vya Jikoni" } }] },
+    { "key": "customOrders", "type": "boolean", "required": true, "label": { "en": "Accept custom orders?", "sw": "Mnakubali maagizo maalum?" }, "help": { "en": "Can you make custom furniture?", "sw": "Mnaweza kutengeneza samani maalum?" } },
+    { "key": "deliveryAvailable", "type": "boolean", "required": true, "label": { "en": "Delivery & Assembly?", "sw": "Uwasilishaji na Ufungaji?" }, "help": { "en": "Do you deliver and assemble?", "sw": "Mnawasilisha na kufunga?" } },
+    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sat 9am-6pm", "sw": "mfano Jumatatu-Jumamosi 9am-6pm" } }
+  ],
+  "rules": {
+    "neverInvent": ["price", "stock", "dimensions", "materials", "eta", "deliveryCost"],
+    "escalateIf": ["refund_request", "complaint", "damaged_delivery", "wrong_item"],
+    "style": ["WhatsApp short messages", "helpful design-oriented tone", "include dimensions and materials when available"]
+  },
+  "templates": {
+    "orderConfirm": { "en": "Your order:\n{items}\nTotal: {currency} {total}\nDelivery: {delivery}\n\nConfirm?", "sw": "Agizo lako:\n{items}\nJumla: {currency} {total}\nUwasilishaji: {delivery}\n\nThibitisha?" },
+    "availabilityCheck": { "en": "Let me check availability and dimensions for {item}.", "sw": "Acha niangalie upatikanaji na vipimo vya {item}." },
+    "quoteRequest": { "en": "For a quote, please share:\n- What you're looking for\n- Room dimensions (if relevant)\n- Budget range", "sw": "Kwa nukuu, tafadhali shiriki:\n- Unachotafuta\n- Vipimo vya chumba (kama ni muhimu)\n- Kiwango cha bajeti" }
+  }
+}

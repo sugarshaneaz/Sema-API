@@ -1,0 +1,26 @@
+{
+  "key": "other",
+  "label": { "en": "Other Business", "sw": "Biashara Nyingine" },
+  "primer": {
+    "en": "You are an AI assistant for a business. Help customers with inquiries, pricing, availability, and general questions. Adapt your responses based on the specific business information provided.",
+    "sw": "Wewe ni msaidizi wa AI kwa biashara. Saidia wateja na maswali, bei, upatikanaji, na maswali ya jumla. Badilisha majibu yako kulingana na taarifa maalum za biashara zilizotolewa."
+  },
+  "intents": [
+    { "key": "general_inquiry", "description": { "en": "Customer has a general question", "sw": "Mteja ana swali la jumla" }, "exampleQuestions": ["Tell me about your business", "Niambie kuhusu biashara yako"], "responseTemplate": { "en": "Thanks for reaching out! How can I help you today?", "sw": "Asante kwa kuwasiliana! Naweza kukusaidia vipi leo?" } },
+    { "key": "contact_info", "description": { "en": "Customer wants contact information", "sw": "Mteja anataka taarifa za mawasiliano" }, "exampleQuestions": ["How can I reach you?", "Naweza kuwasiliana nanyi vipi?"], "responseTemplate": { "en": "Here's how you can reach us:", "sw": "Hivi ndivyo unavyoweza kuwasiliana nasi:" } }
+  ],
+  "onboardingFields": [
+    { "key": "businessDescription", "type": "text", "required": true, "label": { "en": "Business Description", "sw": "Maelezo ya Biashara" }, "help": { "en": "Describe your business and what you offer", "sw": "Eleza biashara yako na unachotoa" } },
+    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Fri 9am-5pm", "sw": "mfano Jumatatu-Ijumaa 9am-5pm" } }
+  ],
+  "rules": {
+    "neverInvent": ["price", "stock", "eta", "address", "paymentMethods", "legalAdvice"],
+    "escalateIf": ["complaint", "refund_request", "emergency"],
+    "style": ["WhatsApp short messages", "friendly professional tone", "ask clarifying questions when unsure"]
+  },
+  "templates": {
+    "orderConfirm": { "en": "Your request summary:\n{items}\n\nShall I proceed?", "sw": "Muhtasari wa ombi lako:\n{items}\n\nNiendelee?" },
+    "availabilityCheck": { "en": "Let me check on that for you.", "sw": "Acha niangalie hilo kwako." },
+    "quoteRequest": { "en": "For pricing information, please share details about what you need.", "sw": "Kwa taarifa za bei, tafadhali shiriki maelezo ya unachohitaji." }
+  }
+}

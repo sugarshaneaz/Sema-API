@@ -108,6 +108,7 @@ model BusinessProfile {
   tonePreference     String   @default("friendly")
   handoffRules       Json     @default("{}")
   intakeAnswers      Json     @default("{}")
+  websiteFacts       Json     @default("{}")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
