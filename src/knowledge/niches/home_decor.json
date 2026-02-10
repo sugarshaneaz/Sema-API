@@ -10,10 +10,9 @@
     { "key": "custom_order", "description": { "en": "Customer wants a custom item", "sw": "Mteja anataka bidhaa maalum" }, "exampleQuestions": ["Can you make custom furniture?", "Mnaweza kutengeneza samani maalum?"], "responseTemplate": { "en": "We can discuss custom options! What do you have in mind?", "sw": "Tunaweza kujadili chaguo maalum! Una mawazo gani?" } }
   ],
   "onboardingFields": [
-    { "key": "productTypes", "type": "multi", "required": true, "label": { "en": "Product Types", "sw": "Aina za Bidhaa" }, "help": { "en": "What do you sell?", "sw": "Mnauza nini?" }, "options": [{ "value": "furniture", "label": { "en": "Furniture", "sw": "Samani" } }, { "value": "decor", "label": { "en": "Decor Items", "sw": "Vitu vya Mapambo" } }, { "value": "curtains", "label": { "en": "Curtains & Blinds", "sw": "Mapazia" } }, { "value": "kitchenware", "label": { "en": "Kitchenware", "sw": "Vifaa vya Jikoni" } }] },
-    { "key": "customOrders", "type": "boolean", "required": true, "label": { "en": "Accept custom orders?", "sw": "Mnakubali maagizo maalum?" }, "help": { "en": "Can you make custom furniture?", "sw": "Mnaweza kutengeneza samani maalum?" } },
-    { "key": "deliveryAvailable", "type": "boolean", "required": true, "label": { "en": "Delivery & Assembly?", "sw": "Uwasilishaji na Ufungaji?" }, "help": { "en": "Do you deliver and assemble?", "sw": "Mnawasilisha na kufunga?" } },
-    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sat 9am-6pm", "sw": "mfano Jumatatu-Jumamosi 9am-6pm" } }
+    { "key": "what_you_sell", "type": "multi-select", "required": true, "label": { "en": "What do you sell?", "sw": "Mnauza nini?" }, "options": [{ "value": "decor", "label": { "en": "Decor", "sw": "Mapambo" } }, { "value": "furniture", "label": { "en": "Furniture", "sw": "Samani" } }, { "value": "lighting", "label": { "en": "Lighting", "sw": "Taa" } }, { "value": "curtains", "label": { "en": "Curtains", "sw": "Mapazia" } }, { "value": "rugs", "label": { "en": "Rugs", "sw": "Zulia" } }, { "value": "kitchen", "label": { "en": "Kitchen", "sw": "Jikoni" } }, { "value": "bathroom", "label": { "en": "Bathroom", "sw": "Bafuni" } }, { "value": "other", "label": { "en": "Other", "sw": "Nyingine" } }] },
+    { "key": "large_item_delivery", "type": "boolean", "required": true, "label": { "en": "Delivery available for large items?", "sw": "Uwasilishaji unapatikana kwa bidhaa kubwa?" } },
+    { "key": "assembly_offered", "type": "boolean", "required": true, "label": { "en": "Assembly/installation offered?", "sw": "Ufungaji unatolewa?" } }
   ],
   "rules": {
     "neverInvent": ["price", "stock", "dimensions", "materials", "eta", "deliveryCost"],

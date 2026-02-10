@@ -20,11 +20,14 @@ export interface OnboardingFieldOption {
 
 export interface OnboardingField {
   key: string;
-  type: "select" | "text" | "multi" | "boolean";
+  type: "select" | "text" | "multi" | "multi-select" | "boolean" | "textarea" | "number";
   required: boolean;
   label: NicheLabel;
-  help: NicheLabel;
+  help?: NicheLabel;
   options?: OnboardingFieldOption[];
+  placeholder?: NicheLabel;
+  visibleIf?: { field: string; value: any };
+  max?: number;
 }
 
 export interface NicheRules {

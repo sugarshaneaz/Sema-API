@@ -10,9 +10,10 @@
     { "key": "store_info", "description": { "en": "Customer asks about pharmacy hours or location", "sw": "Mteja anauliza saa au mahali pa duka la dawa" }, "exampleQuestions": ["Are you open on Sunday?", "Mnafungua Jumapili?"], "responseTemplate": { "en": "Our pharmacy hours are:", "sw": "Saa za duka letu la dawa ni:" } }
   ],
   "onboardingFields": [
-    { "key": "pharmacyType", "type": "select", "required": true, "label": { "en": "Pharmacy Type", "sw": "Aina ya Duka la Dawa" }, "help": { "en": "What type of pharmacy?", "sw": "Aina gani ya duka la dawa?" }, "options": [{ "value": "retail", "label": { "en": "Retail Pharmacy", "sw": "Duka la Dawa la Rejareja" } }, { "value": "hospital", "label": { "en": "Hospital Pharmacy", "sw": "Duka la Dawa la Hospitali" } }, { "value": "dispensary", "label": { "en": "Dispensary", "sw": "Zahanati" } }] },
-    { "key": "prescriptionRequired", "type": "boolean", "required": true, "label": { "en": "Prescription dispensing?", "sw": "Mnatoa dawa za cheti?" }, "help": { "en": "Do you dispense prescription medications?", "sw": "Mnatoa dawa za cheti cha daktari?" } },
-    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sun 8am-10pm", "sw": "mfano Jumatatu-Jumapili 8am-10pm" } }
+    { "key": "delivery_available", "type": "boolean", "required": true, "label": { "en": "Delivery available?", "sw": "Uwasilishaji unapatikana?" } },
+    { "key": "delivery_areas", "type": "text", "required": false, "label": { "en": "What areas do you deliver to?", "sw": "Mnawasilisha maeneo gani?" }, "visibleIf": { "field": "delivery_available", "value": true } },
+    { "key": "prescription_photo", "type": "boolean", "required": true, "label": { "en": "Should customers send a prescription photo?", "sw": "Je, wateja wanapaswa kutuma picha ya cheti cha daktari?" } },
+    { "key": "allow_substitutions", "type": "boolean", "required": true, "label": { "en": "Do you allow substitutions if the exact brand is out of stock?", "sw": "Je, mnaruhusu kubadilisha kama chapa sahihi haipo?" } }
   ],
   "rules": {
     "neverInvent": ["price", "stock", "medicalAdvice", "dosage", "sideEffects", "drugInteractions", "diagnosis"],

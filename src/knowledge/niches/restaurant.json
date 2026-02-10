@@ -13,11 +13,9 @@
     { "key": "hours", "description": { "en": "Customer asks about operating hours", "sw": "Mteja anauliza saa za kufungua" }, "exampleQuestions": ["What time do you open?", "Mnafungua saa ngapi?"], "responseTemplate": { "en": "Our operating hours are:", "sw": "Saa zetu za kufungua ni:" } }
   ],
   "onboardingFields": [
-    { "key": "cuisineType", "type": "select", "required": true, "label": { "en": "Cuisine Type", "sw": "Aina ya Chakula" }, "help": { "en": "What type of food do you serve?", "sw": "Mnatoa aina gani ya chakula?" }, "options": [{ "value": "african", "label": { "en": "African", "sw": "Kiafrika" } }, { "value": "indian", "label": { "en": "Indian", "sw": "Kihindi" } }, { "value": "chinese", "label": { "en": "Chinese", "sw": "Kichina" } }, { "value": "fast_food", "label": { "en": "Fast Food", "sw": "Vyakula vya Haraka" } }, { "value": "mixed", "label": { "en": "Mixed/Fusion", "sw": "Mchanganyiko" } }] },
-    { "key": "hasDelivery", "type": "boolean", "required": true, "label": { "en": "Do you offer delivery?", "sw": "Je, mnatoa uwasilishaji?" }, "help": { "en": "Whether your restaurant delivers food", "sw": "Kama mkahawa wako unawasilisha chakula" } },
-    { "key": "averageMealPrice", "type": "text", "required": false, "label": { "en": "Average Meal Price Range", "sw": "Kiwango cha Bei ya Wastani" }, "help": { "en": "e.g. 5,000 - 15,000 TZS", "sw": "mfano 5,000 - 15,000 TZS" } },
-    { "key": "seatingCapacity", "type": "text", "required": false, "label": { "en": "Seating Capacity", "sw": "Uwezo wa Viti" }, "help": { "en": "How many guests can you seat?", "sw": "Mnaweza kukaa wageni wangapi?" } },
-    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sat 8am-10pm", "sw": "mfano Jumatatu-Jumamosi 8am-10pm" } }
+    { "key": "cuisine_type", "type": "text", "required": true, "label": { "en": "What type of cuisine do you serve?", "sw": "Mnatoa aina gani ya chakula?" } },
+    { "key": "delivery_pickup", "type": "select", "required": true, "label": { "en": "Do you offer delivery, pickup, or both?", "sw": "Je, mnatoa uwasilishaji, kuchukua, au vyote?" }, "options": [{ "value": "delivery", "label": { "en": "Delivery", "sw": "Uwasilishaji" } }, { "value": "pickup", "label": { "en": "Pickup", "sw": "Kuchukua" } }, { "value": "both", "label": { "en": "Both", "sw": "Vyote" } }] },
+    { "key": "special_requests", "type": "boolean", "required": true, "label": { "en": "Do you accept special requests (spice level / allergies / custom orders)?", "sw": "Je, mnakubali maombi maalum (kiwango cha viungo / mzio / maagizo maalum)?" } }
   ],
   "rules": {
     "neverInvent": ["price", "stock", "eta", "address", "paymentMethods", "ingredients", "allergens"],

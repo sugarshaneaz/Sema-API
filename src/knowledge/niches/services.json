@@ -11,10 +11,9 @@
     { "key": "quote_request", "description": { "en": "Customer wants a price quote", "sw": "Mteja anataka nukuu ya bei" }, "exampleQuestions": ["How much do you charge?", "Mnatoza kiasi gani?"], "responseTemplate": { "en": "For an accurate quote, could you share more details about what you need?", "sw": "Kwa nukuu sahihi, unaweza kushiriki maelezo zaidi kuhusu unachohitaji?" } }
   ],
   "onboardingFields": [
-    { "key": "serviceType", "type": "text", "required": true, "label": { "en": "Type of Service", "sw": "Aina ya Huduma" }, "help": { "en": "What services do you provide?", "sw": "Mnatoa huduma gani?" } },
-    { "key": "serviceArea", "type": "text", "required": false, "label": { "en": "Service Area", "sw": "Eneo la Huduma" }, "help": { "en": "Where do you serve?", "sw": "Mnahudumia wapi?" } },
-    { "key": "bookingRequired", "type": "boolean", "required": true, "label": { "en": "Booking required?", "sw": "Uhifadhi unahitajika?" }, "help": { "en": "Must customers book in advance?", "sw": "Wateja lazima wahifadhi mapema?" } },
-    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Fri 9am-5pm", "sw": "mfano Jumatatu-Ijumaa 9am-5pm" } }
+    { "key": "service_type", "type": "text", "required": true, "label": { "en": "What service type?", "sw": "Aina gani ya huduma?" }, "placeholder": { "en": "e.g., cleaning, repairs, tutoring, transport", "sw": "mfano, usafi, ukarabati, kufundisha, usafiri" } },
+    { "key": "pricing_model", "type": "select", "required": true, "label": { "en": "How do you price?", "sw": "Mnatoza vipi?" }, "options": [{ "value": "fixed_price", "label": { "en": "Fixed price", "sw": "Bei isiyobadilika" } }, { "value": "hourly_rate", "label": { "en": "Hourly rate", "sw": "Bei ya kwa saa" } }, { "value": "quote_based", "label": { "en": "Quote-based", "sw": "Kulingana na nukuu" } }] },
+    { "key": "appointments_needed", "type": "boolean", "required": true, "label": { "en": "Do customers need appointments?", "sw": "Je, wateja wanahitaji miadi?" } }
   ],
   "rules": {
     "neverInvent": ["price", "eta", "legalAdvice", "financialAdvice", "medicalAdvice", "qualifications"],

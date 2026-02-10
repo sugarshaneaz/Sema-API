@@ -10,8 +10,9 @@
     { "key": "contact_info", "description": { "en": "Customer wants contact information", "sw": "Mteja anataka taarifa za mawasiliano" }, "exampleQuestions": ["How can I reach you?", "Naweza kuwasiliana nanyi vipi?"], "responseTemplate": { "en": "Here's how you can reach us:", "sw": "Hivi ndivyo unavyoweza kuwasiliana nasi:" } }
   ],
   "onboardingFields": [
-    { "key": "businessDescription", "type": "text", "required": true, "label": { "en": "Business Description", "sw": "Maelezo ya Biashara" }, "help": { "en": "Describe your business and what you offer", "sw": "Eleza biashara yako na unachotoa" } },
-    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Fri 9am-5pm", "sw": "mfano Jumatatu-Ijumaa 9am-5pm" } }
+    { "key": "what_you_provide", "type": "text", "required": true, "label": { "en": "What do you sell or provide?", "sw": "Mnauza au kutoa nini?" } },
+    { "key": "customer_action", "type": "select", "required": true, "label": { "en": "Do customers usually book, order, or request a quote?", "sw": "Wateja kawaida huhifadhi, kuagiza, au kuomba nukuu?" }, "options": [{ "value": "book", "label": { "en": "Book", "sw": "Hifadhi" } }, { "value": "order", "label": { "en": "Order", "sw": "Agiza" } }, { "value": "request_quote", "label": { "en": "Request a quote", "sw": "Omba nukuu" } }] },
+    { "key": "delivery_onsite", "type": "select", "required": true, "label": { "en": "Do you deliver or serve only on-site?", "sw": "Mnawasilisha au kuhudumia mahali tu?" }, "options": [{ "value": "delivery", "label": { "en": "Delivery", "sw": "Uwasilishaji" } }, { "value": "onsite", "label": { "en": "On-site", "sw": "Mahali" } }, { "value": "both", "label": { "en": "Both", "sw": "Vyote" } }] }
   ],
   "rules": {
     "neverInvent": ["price", "stock", "eta", "address", "paymentMethods", "legalAdvice"],

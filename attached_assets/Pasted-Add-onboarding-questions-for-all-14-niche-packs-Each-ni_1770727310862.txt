@@ -1,0 +1,86 @@
+Add onboarding questions for all 14 niche packs. Each niche's onboardingFields array should contain the questions below. The frontend renders these dynamically using field types: text, select, multi-select, boolean, textarea, number. The API endpoint GET /api/niches/:nicheKey returns a niche pack with an onboardingFields array. Each field object has: key, type, label, help (optional), required (boolean), options (array of {value, label} for select/multi-select), placeholder (optional), defaultValue (optional).
+
+Here are the questions per niche:
+
+1) restaurant
+
+cuisine_type (text) — "What type of cuisine do you serve?"
+delivery_pickup (select) — "Do you offer delivery, pickup, or both?" — options: Delivery, Pickup, Both
+special_requests (boolean) — "Do you accept special requests (spice level / allergies / custom orders)?"
+2) retail
+
+top_categories (multi-select, max 3) — "What categories do you sell most?" — options: Electronics, Clothing, Home Goods, Food & Beverage, Beauty, Sports, Toys, Books, Auto, Other
+delivery_available (boolean) — "Do you offer delivery?"
+delivery_areas (text, visible if delivery=true) — "What areas do you deliver to?"
+return_policy (select) — "What's your return/exchange policy?" — options: Exchange only, Refunds, No returns
+3) clinic
+
+services_provided (multi-select, max 5) — "What services do you provide?" — options: General consultation, Dental, Eye care, Lab tests, Vaccinations, Pediatrics, Dermatology, Physiotherapy, Mental health, Other
+appointment_walkin (select) — "Appointment only or walk-ins?" — options: Appointment only, Walk-ins welcome, Both
+urgent_cases (select) — "What should customers do for urgent cases?" — options: Call clinic, Go to emergency, Other
+4) salon
+
+services_offered (multi-select) — "What services do you offer?" — options: Haircuts, Coloring, Braiding, Nails, Facials, Waxing, Makeup, Massage, Other
+appointment_walkin (select) — "Appointment only or walk-ins?" — options: Appointment only, Walk-ins welcome, Both
+pricing_level (select) — "Typical pricing level?" — options: Budget, Mid-range, Premium
+5) gov
+
+department_service (text) — "What department/service is this for?" — placeholder: "e.g., permits, licensing, support"
+submission_method (multi-select) — "How should citizens submit requests?" — options: WhatsApp, Email, Form link, In-person
+required_info (multi-select) — "What info must people include in a request?" — options: ID number, Reference number, Full name, Phone number, Other
+6) other
+
+what_you_provide (text) — "What do you sell or provide?"
+customer_action (select) — "Do customers usually book, order, or request a quote?" — options: Book, Order, Request a quote
+delivery_onsite (select) — "Do you deliver or serve only on-site?" — options: Delivery, On-site, Both
+7) hardware
+
+main_categories (multi-select) — "Main categories?" — options: Plumbing, Electrical, Tools, Paint, Building materials, Fasteners, Safety equipment, Other
+delivery_available (boolean) — "Delivery available?"
+delivery_areas (text, visible if delivery=true) — "What areas do you deliver to?"
+installation_services (boolean) — "Do you offer installation services?"
+8) electronics
+
+main_categories (multi-select) — "Main categories?" — options: Phones, Accessories, TVs, Computers, Audio, Gaming, Smart home, Other
+warranty (select) — "Warranty offered?" — options: None, Store warranty, Manufacturer warranty
+repairs_available (boolean) — "Repairs available?"
+9) beauty_supply
+
+main_focus (multi-select) — "Main focus?" — options: Hair care, Skincare, Cosmetics, Fragrances, Tools & accessories, Other
+returns_opened (boolean) — "Returns on opened items?"
+favorite_brands (text) — "Favorite brands to highlight?" — placeholder: "e.g., L'Oreal, Shea Moisture, MAC"
+10) clothing
+
+what_you_sell (multi-select) — "What do you sell most?" — options: Men's clothing, Women's clothing, Kids' clothing, Shoes, Accessories, Other
+exchange_days (select) — "Exchange policy (days allowed)?" — options: 3 days, 7 days, 14 days, 30 days, No exchanges
+delivery_available (boolean) — "Delivery available?"
+delivery_areas (text, visible if delivery=true) — "What areas do you deliver to?"
+11) home_decor
+
+what_you_sell (multi-select) — "What do you sell?" — options: Decor, Furniture, Lighting, Curtains, Rugs, Kitchen, Bathroom, Other
+large_item_delivery (boolean) — "Delivery available for large items?"
+assembly_offered (boolean) — "Assembly/installation offered?"
+12) pharmacy
+
+delivery_available (boolean) — "Delivery available?"
+delivery_areas (text, visible if delivery=true) — "What areas do you deliver to?"
+prescription_photo (boolean) — "Should customers send a prescription photo?"
+allow_substitutions (boolean) — "Do you allow substitutions if the exact brand is out of stock?"
+13) services
+
+service_type (text) — "What service type?" — placeholder: "e.g., cleaning, repairs, tutoring, transport"
+pricing_model (select) — "How do you price?" — options: Fixed price, Hourly rate, Quote-based
+appointments_needed (boolean) — "Do customers need appointments?"
+14) general_retail
+
+top_categories (multi-select, max 3) — "Top product categories?" — options: Groceries, Household, Electronics, Clothing, Beauty, Stationery, Toys, Other
+delivery_available (boolean) — "Delivery available?"
+delivery_areas (text, visible if delivery=true) — "What areas do you deliver to?"
+return_policy (select) — "Returns/exchanges allowed?" — options: Exchange only, Refunds, No returns
+Implementation notes:
+
+All fields should have required: true except delivery_areas fields (which are conditional)
+Boolean fields render as Yes/No toggles on the frontend
+Multi-select fields with a max should include max in the field metadata if supported
+The frontend fetches these via GET /api/niches/:nicheKey and reads the onboardingFields array
+Answers are saved via POST /api/business/:businessId/onboarding-answers with { answers: { key: value } }

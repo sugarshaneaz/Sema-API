@@ -10,9 +10,10 @@
     { "key": "order_placement", "description": { "en": "Customer wants to place an order", "sw": "Mteja anataka kuagiza" }, "exampleQuestions": ["I want to buy", "Nataka kununua"], "responseTemplate": { "en": "Great! What would you like to order?", "sw": "Vizuri! Ungependa kuagiza nini?" } }
   ],
   "onboardingFields": [
-    { "key": "businessDescription", "type": "text", "required": true, "label": { "en": "Business Description", "sw": "Maelezo ya Biashara" }, "help": { "en": "Describe what your business sells", "sw": "Eleza biashara yako inauza nini" } },
-    { "key": "deliveryAvailable", "type": "boolean", "required": true, "label": { "en": "Delivery available?", "sw": "Uwasilishaji unapatikana?" }, "help": { "en": "Can customers get delivery?", "sw": "Wateja wanaweza kupata uwasilishaji?" } },
-    { "key": "operatingHours", "type": "text", "required": true, "label": { "en": "Operating Hours", "sw": "Saa za Kufanya Kazi" }, "help": { "en": "e.g. Mon-Sat 8am-8pm", "sw": "mfano Jumatatu-Jumamosi 8am-8pm" } }
+    { "key": "top_categories", "type": "multi-select", "required": true, "max": 3, "label": { "en": "Top product categories?", "sw": "Aina kuu za bidhaa?" }, "options": [{ "value": "groceries", "label": { "en": "Groceries", "sw": "Vyakula" } }, { "value": "household", "label": { "en": "Household", "sw": "Nyumbani" } }, { "value": "electronics", "label": { "en": "Electronics", "sw": "Elektroniki" } }, { "value": "clothing", "label": { "en": "Clothing", "sw": "Nguo" } }, { "value": "beauty", "label": { "en": "Beauty", "sw": "Urembo" } }, { "value": "stationery", "label": { "en": "Stationery", "sw": "Vifaa vya ofisi" } }, { "value": "toys", "label": { "en": "Toys", "sw": "Vinyago" } }, { "value": "other", "label": { "en": "Other", "sw": "Nyingine" } }] },
+    { "key": "delivery_available", "type": "boolean", "required": true, "label": { "en": "Delivery available?", "sw": "Uwasilishaji unapatikana?" } },
+    { "key": "delivery_areas", "type": "text", "required": false, "label": { "en": "What areas do you deliver to?", "sw": "Mnawasilisha maeneo gani?" }, "visibleIf": { "field": "delivery_available", "value": true } },
+    { "key": "return_policy", "type": "select", "required": true, "label": { "en": "Returns/exchanges allowed?", "sw": "Kurudisha/kubadilisha kunaruhusiwa?" }, "options": [{ "value": "exchange_only", "label": { "en": "Exchange only", "sw": "Kubadilisha tu" } }, { "value": "refunds", "label": { "en": "Refunds", "sw": "Kurudisha pesa" } }, { "value": "no_returns", "label": { "en": "No returns", "sw": "Hakuna kurudisha" } }] }
   ],
   "rules": {
     "neverInvent": ["price", "stock", "eta", "address", "paymentMethods"],
