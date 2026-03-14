@@ -3758,6 +3758,10 @@ app.post("/api/whatsapp/embedded-signup/complete", async (req: Request, res: Res
       return;
     }
     const finalAccessToken = exchangeResult.accessToken;
+    if (!finalAccessToken) {
+      res.status(400).json({ ok: false, error: "Failed to retrieve access token from exchange" });
+      return;
+    }
     
     // Upsert WhatsApp connection
     const connection = await prisma.whatsappConnection.upsert({
