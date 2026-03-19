@@ -3,17 +3,13 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "npx playwright install chromium chromium-headless-shell && tsc -p tsconfig.json && mv dist/index.js dist/index.cjs",
+    "build": "tsc -p tsconfig.json && mv dist/index.js dist/index.cjs",
     "start": "node dist/index.cjs"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.18.0",
     "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
-    "@types/cheerio": "^0.22.35",
-    "@types/multer": "^2.0.0",
-    "@types/pg": "^8.16.0",
-    "@types/supertest": "^6.0.3",
     "@uppy/aws-s3": "^5.1.0",
     "@uppy/core": "^5.2.0",
     "@uppy/dashboard": "^5.1.0",
@@ -24,6 +20,7 @@
     "drizzle-zod": "^0.8.3",
     "express": "^4.22.1",
     "google-auth-library": "^10.5.0",
+    "helmet": "^8.1.0",
     "multer": "^2.0.2",
     "openai": "^6.15.0",
     "p-limit": "^7.2.0",
@@ -33,17 +30,21 @@
     "pg": "^8.16.3",
     "prisma": "^7.2.0",
     "sharp": "^0.34.5",
-    "supertest": "^7.2.2",
     "tesseract.js": "^7.0.0",
-    "vitest": "^4.0.17",
     "zod": "^4.3.5",
     "zod-validation-error": "^5.0.0"
   },
   "devDependencies": {
+    "@types/cheerio": "^0.22.35",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
+    "@types/multer": "^2.0.0",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.16.0",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.2.2",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^4.0.17"
   }
 }

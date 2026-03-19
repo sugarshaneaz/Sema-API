@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
-import { createHash, randomBytes } from "crypto";
+import helmet from "helmet";
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { OrderStatus, TranslationStatus } from "@prisma/client";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -35,8 +36,61 @@ console.log(`Web scraping: Using cheerio (fast HTML parsing)`);
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
-app.use(cors());
-app.use(express.json());
+// Security headers
+app.use(helmet());
+
+// CORS - restrict to frontend origins
+app.use(cors({
+  origin: process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(",").map(o => o.trim())
+    : ["https://sema-api--shanesylvester.replit.app"],
+  credentials: true,
+}));
+
+// Body size limit
+app.use(express.json({ limit: "1mb" }));
+
+// SSRF protection helper for scraper endpoints
+function isInternalUrl(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    const h = parsed.hostname.toLowerCase();
+    if (h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "[::1]") return true;
+    if (h.startsWith("10.") || h.startsWith("192.168.")) return true;
+    if (h.startsWith("172.")) {
+      const second = parseInt(h.split(".")[1]);
+      if (second >= 16 && second <= 31) return true;
+    }
+    if (h === "169.254.169.254" || h === "metadata.google.internal" || h.endsWith(".internal")) return true;
+    return false;
+  } catch { return true; }
+}
+
+// HTML escaping for XSS prevention
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/'/g, "&#39;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Auth rate limiter
+const authRateLimits = new Map<string, { count: number; resetAt: number }>();
+function checkAuthRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const limit = authRateLimits.get(ip);
+  if (limit && now < limit.resetAt) {
+    if (limit.count >= 10) return false;
+    limit.count++;
+    return true;
+  }
+  authRateLimits.set(ip, { count: 1, resetAt: now + 15 * 60 * 1000 });
+  return true;
+}
+
+// Clean up expired rate limits
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of authRateLimits) if (now > val.resetAt) authRateLimits.delete(key);
+  for (const [key, val] of scrapeRateLimits) if (now > val.resetAt) scrapeRateLimits.delete(key);
+}, 60000);
 
 function maskToken(token: string | null | undefined): string {
   if (!token) return "***masked***";
@@ -79,6 +133,11 @@ app.post("/api/scrape-website", async (req: Request, res: Response) => {
       return;
     }
 
+    if (isInternalUrl(url)) {
+      res.status(400).json({ ok: false, error: "URL not allowed" });
+      return;
+    }
+
     // Use cheerio-based scraping (render param kept for API compatibility but ignored)
     const result = await scrapeWithCheerio(url);
 
@@ -95,22 +154,7 @@ app.post("/api/scrape-website", async (req: Request, res: Response) => {
   }
 });
 
-app.get("/api/debug/env", (_req: Request, res: Response) => {
-  res.json({
-    hasDbUrl: !!process.env.DATABASE_URL,
-    dbUrlPrefix: process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 30) + "..." : null,
-    nodeEnv: process.env.NODE_ENV || "not set",
-  });
-});
-
-app.get("/api/debug/dbinfo", (_req: Request, res: Response) => {
-  const url = process.env.DATABASE_URL || "";
-  res.json({
-    hasDbUrl: Boolean(url),
-    dbUrlPrefix: url ? url.slice(0, 25) : null,
-    dbUrlHash: url ? createHash("sha256").update(url).digest("hex").slice(0, 12) : null,
-  });
-});
+// Debug endpoints removed — use /api/health instead
 
 app.get("/api/db/ping", async (_req: Request, res: Response) => {
   try {
@@ -675,8 +719,29 @@ app.get("/webhooks/whatsapp", async (req: Request, res: Response) => {
 });
 
 app.post("/webhooks/whatsapp", async (req: Request, res: Response) => {
+  // Verify webhook signature if META_APP_SECRET is configured
+  const appSecret = process.env.META_APP_SECRET;
+  if (appSecret) {
+    const sig = req.headers["x-hub-signature-256"] as string;
+    if (!sig) {
+      res.sendStatus(401);
+      return;
+    }
+    const expectedSig = "sha256=" + createHmac("sha256", appSecret).update(JSON.stringify(req.body)).digest("hex");
+    try {
+      if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) {
+        console.error("[Webhook] Signature mismatch");
+        res.sendStatus(401);
+        return;
+      }
+    } catch {
+      res.sendStatus(401);
+      return;
+    }
+  }
+
   const body = req.body;
-  
+
   // Log event FIRST before any processing
   await logWebhookEvent(
     "POST",
@@ -1668,7 +1733,25 @@ const adminSessions = new Map<string, AdminSession>();
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 function hashPassword(password: string, salt: string): string {
-  return createHash("sha256").update(salt + password).digest("hex");
+  return scryptSync(password, salt, 64).toString("hex");
+}
+
+/** Verify password against stored hash — supports both legacy SHA-256 and new scrypt */
+function verifyPasswordHash(password: string, salt: string, storedHash: string): boolean {
+  // Try scrypt first (new hashes are 128 hex chars = 64 bytes)
+  if (storedHash.length === 128) {
+    const scryptHash = scryptSync(password, salt, 64).toString("hex");
+    try {
+      return timingSafeEqual(Buffer.from(scryptHash, "hex"), Buffer.from(storedHash, "hex"));
+    } catch { return false; }
+  }
+  // Fallback to legacy SHA-256 (64 hex chars = 32 bytes)
+  const sha256Hash = createHash("sha256").update(salt + password).digest("hex");
+  if (sha256Hash === storedHash) {
+    // TODO: re-hash with scrypt on successful login
+    return true;
+  }
+  return false;
 }
 
 function generateToken(): string {
@@ -1734,6 +1817,12 @@ async function requireAdminAuth(req: AuthenticatedRequest, res: Response, next: 
 
 app.post("/api/admin/register", async (req: Request, res: Response) => {
   try {
+    const ip = req.ip || req.socket.remoteAddress || "unknown";
+    if (!checkAuthRateLimit(ip)) {
+      res.status(429).json({ error: "Too many attempts. Try again in 15 minutes." });
+      return;
+    }
+
     const { email, password, name } = req.body;
 
     if (!email || !password || !name) {
@@ -1741,8 +1830,8 @@ app.post("/api/admin/register", async (req: Request, res: Response) => {
       return;
     }
 
-    if (password.length < 6) {
-      res.status(400).json({ error: "Password must be at least 6 characters" });
+    if (password.length < 8) {
+      res.status(400).json({ error: "Password must be at least 8 characters" });
       return;
     }
 
@@ -1778,6 +1867,12 @@ app.post("/api/admin/register", async (req: Request, res: Response) => {
 
 app.post("/api/admin/login", async (req: Request, res: Response) => {
   try {
+    const ip = req.ip || req.socket.remoteAddress || "unknown";
+    if (!checkAuthRateLimit(ip)) {
+      res.status(429).json({ error: "Too many login attempts. Try again in 15 minutes." });
+      return;
+    }
+
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -1795,8 +1890,7 @@ app.post("/api/admin/login", async (req: Request, res: Response) => {
       return;
     }
 
-    const hash = hashPassword(password, admin.salt);
-    if (hash !== admin.passwordHash) {
+    if (!verifyPasswordHash(password, admin.salt, admin.passwordHash)) {
       res.status(401).json({ error: "Invalid email or password" });
       return;
     }
@@ -3499,10 +3593,12 @@ function verifySignupNonce(token: string, maxAgeMs: number = 30 * 60 * 1000): bo
       return false;
     }
     
-    // Verify signature
+    // Verify signature with timing-safe comparison
     const data = `${nonce}:${timestamp}`;
     const expectedSig = createHash('sha256').update(data + secret).digest('hex');
-    return signature === expectedSig;
+    try {
+      return timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig));
+    } catch { return false; }
   } catch {
     return false;
   }
@@ -3608,10 +3704,10 @@ app.get("/connect/whatsapp", (req: Request, res: Response) => {
   </div>
 
   <script>
-    const SIGNUP_NONCE = '${signupNonce}';
-    const API_BASE = '${apiBaseUrl}';
-    const META_APP_ID = '${metaAppId}';
-    const META_CONFIG_ID = '${metaConfigId}';
+    const SIGNUP_NONCE = '${escapeHtml(signupNonce)}';
+    const API_BASE = '${escapeHtml(apiBaseUrl)}';
+    const META_APP_ID = '${escapeHtml(metaAppId)}';
+    const META_CONFIG_ID = '${escapeHtml(metaConfigId)}';
     
     window.fbAsyncInit = function() {
       FB.init({
@@ -3681,7 +3777,7 @@ app.get("/connect/whatsapp", (req: Request, res: Response) => {
         if (result.ok) {
           showStatus('success', '✓ WhatsApp connected successfully! You can close this window.');
           if (window.opener) {
-            window.opener.postMessage({ type: 'WHATSAPP_CONNECTED', connection: result.connection }, '*');
+            window.opener.postMessage({ type: 'WHATSAPP_CONNECTED', connection: result.connection }, API_BASE);
           }
         } else {
           btn.disabled = false;
@@ -3762,7 +3858,7 @@ app.post("/api/whatsapp/embedded-signup/complete", async (req: Request, res: Res
       res.status(400).json({ ok: false, error: "Failed to retrieve access token from exchange" });
       return;
     }
-    
+
     // Upsert WhatsApp connection
     const connection = await prisma.whatsappConnection.upsert({
       where: { phoneNumberId },
@@ -3915,28 +4011,14 @@ app.post("/api/whatsapp/embedded-signup/exchange", async (req: Request, res: Res
 });
 
 // GET /api/whatsapp/embedded-signup/status - Check if user has connected WhatsApp
-app.get("/api/whatsapp/embedded-signup/status", async (req: Request, res: Response) => {
+app.get("/api/whatsapp/embedded-signup/status", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    // Get the most recent connection (could be filtered by admin/business in future)
-    const connections = await prisma.whatsappConnection.findMany({
-      select: {
-        id: true,
-        wabaId: true,
-        phoneNumberId: true,
-        displayPhoneNumber: true,
-        businessName: true,
-        enabled: true,
-        mode: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-    });
-    
+    // Only return connection count (not details) unless authenticated
+    const count = await prisma.whatsappConnection.count();
+
     res.json({
       ok: true,
-      hasConnection: connections.length > 0,
-      connections,
+      hasConnection: count > 0,
     });
   } catch (error) {
     console.error("Status check error:", error);
@@ -3947,9 +4029,9 @@ app.get("/api/whatsapp/embedded-signup/status", async (req: Request, res: Respon
 // GET /api/debug/whatsapp/onboarding - Debug endpoint for onboarding attempts
 app.get("/api/debug/whatsapp/onboarding", async (req: Request, res: Response) => {
   const { key, limit } = req.query;
-  const debugKey = process.env.DEBUG_KEY || "sema-debug-2026";
-  
-  if (key !== debugKey) {
+  const debugKey = process.env.DEBUG_KEY;
+
+  if (!debugKey || key !== debugKey) {
     res.status(401).json({ error: "Invalid debug key" });
     return;
   }
@@ -4151,11 +4233,23 @@ async function seedNichesFromPacks() {
 }
 
 seedNichesFromPacks().then(() => {
-  app.listen(port, "0.0.0.0", () => {
+  const server = app.listen(port, "0.0.0.0", () => {
     console.log(`=== sema-api started ===`);
     console.log(`PORT: ${port}`);
     console.log(`NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
     console.log(`DATABASE_URL: ${process.env.DATABASE_URL ? 'configured' : 'missing'}`);
     console.log(`Listening on 0.0.0.0:${port}`);
   });
+
+  async function shutdown(signal: string) {
+    console.log(`${signal} received. Shutting down...`);
+    server.close(async () => {
+      await prisma.$disconnect();
+      console.log("Server shut down cleanly.");
+      process.exit(0);
+    });
+    setTimeout(() => { console.error("Forced shutdown."); process.exit(1); }, 10_000);
+  }
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 });

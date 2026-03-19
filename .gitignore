@@ -5,3 +5,6 @@ server/public
 vite.config.ts.*
 *.tar.gz
 /src/generated/prisma
+.env
+.env.local
+.env.production
