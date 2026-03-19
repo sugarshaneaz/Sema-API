@@ -45,5 +45,5 @@ integrations = ["javascript_database:1.0.0", "javascript_openai_ai_integrations:
 [userenv]
 
 [userenv.shared]
-DEBUG_KEY = "sema-debug-2026"
+DEBUG_KEY = "69403cdee1933b7c141385fd7fa298179fd5de5fd8d6166c9131ccede0f4d6d6"
 CORS_ORIGINS = "https://sema-api--shanesylvester.replit.app"
