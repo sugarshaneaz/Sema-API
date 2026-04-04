@@ -255,7 +255,12 @@ model Business {
   outgoingTranslateTo    String       @default("en")
   autoTranslateIncoming  Boolean      @default(true)
   autoTranslateOutgoing  Boolean      @default(false)
-  plan                   String       @default("free")
+  plan                   String       @default("trial")
+  planStatus             String       @default("active")
+  trialEndsAt            DateTime?
+  planEndsAt             DateTime?
+  aiMessagesToday        Int          @default(0)
+  aiMessagesResetAt      DateTime?
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
 

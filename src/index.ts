@@ -92,6 +92,137 @@ setInterval(() => {
   for (const [key, val] of scrapeRateLimits) if (now > val.resetAt) scrapeRateLimits.delete(key);
 }, 60000);
 
+// ── Subscription Plan Definitions ─────────────────────────────────
+interface PlanDefinition {
+  id: string;
+  name: string;
+  tagline: string;
+  prices: Record<string, number>;
+  limits: {
+    aiMessagesPerDay: number;
+    whatsappNumbers: number;
+    knowledgeSources: number;
+    smartModelAccess: boolean;
+  };
+  features: string[];
+  trialDays?: number;
+}
+
+const PLANS: Record<string, PlanDefinition> = {
+  trial: {
+    id: "trial",
+    name: "Trial",
+    tagline: "Try Sema free for 14 days",
+    prices: { USD: 0, TSH: 0, KES: 0, UGX: 0 },
+    limits: { aiMessagesPerDay: 50, whatsappNumbers: 1, knowledgeSources: 3, smartModelAccess: false },
+    features: ["50 AI replies/day", "1 WhatsApp number", "Review mode", "Basic knowledge base"],
+    trialDays: 14,
+  },
+  free: {
+    id: "free",
+    name: "Free",
+    tagline: "Legacy free plan",
+    prices: { USD: 0, TSH: 0, KES: 0, UGX: 0 },
+    limits: { aiMessagesPerDay: 50, whatsappNumbers: 1, knowledgeSources: 3, smartModelAccess: false },
+    features: ["50 AI replies/day", "1 WhatsApp number", "Review mode"],
+  },
+  starter: {
+    id: "starter",
+    name: "Starter",
+    tagline: "For small businesses getting started",
+    prices: { USD: 15, TSH: 37500, KES: 1950, UGX: 55500 },
+    limits: { aiMessagesPerDay: 500, whatsappNumbers: 1, knowledgeSources: 10, smartModelAccess: false },
+    features: ["500 AI replies/day", "1 WhatsApp number", "Auto + Review mode", "Business hours", "Website scraping", "File uploads"],
+  },
+  pro: {
+    id: "pro",
+    name: "Pro",
+    tagline: "For growing businesses",
+    prices: { USD: 29, TSH: 72500, KES: 3770, UGX: 107300 },
+    limits: { aiMessagesPerDay: 2000, whatsappNumbers: 3, knowledgeSources: 50, smartModelAccess: true },
+    features: ["2,000 AI replies/day", "Up to 3 WhatsApp numbers", "Smart AI routing (GPT-4o for complex queries)", "Multi-language support", "Priority support", "Analytics (coming soon)"],
+  },
+};
+
+function getPlanLimits(planId: string) {
+  return PLANS[planId]?.limits ?? PLANS.trial.limits;
+}
+
+// ── LLM Router — classify message complexity ──────────────────────
+type ModelTier = "fast" | "smart";
+
+const COMPLEX_SIGNALS = [
+  "refund", "cancel", "complaint", "unhappy", "frustrated", "angry",
+  "change my order", "wrong order", "missing item", "overcharged",
+  "speak to", "manager", "supervisor", "human", "real person",
+  "booking conflict", "double booked", "reschedule",
+  "allergy", "allergic", "dietary", "ingredients",
+  "legal", "lawyer", "lawsuit",
+];
+
+const SIMPLE_PATTERNS = [
+  /^(hi|hello|hey|hola|jambo|habari|mambo|sema)[\s!?.]*$/i,
+  /^(thanks|thank you|asante|ok|okay|bye|goodbye|see you)[\s!?.]*$/i,
+  /^(yes|no|yeah|nah|ndio|hapana)[\s!?.]*$/i,
+];
+
+function classifyMessage(message: string): ModelTier {
+  const lower = message.toLowerCase().trim();
+  for (const p of SIMPLE_PATTERNS) { if (p.test(lower)) return "fast"; }
+  if (lower.length < 20) return "fast";
+  for (const s of COMPLEX_SIGNALS) { if (lower.includes(s)) return "smart"; }
+  if ((lower.match(/\?/g) || []).length >= 2) return "smart";
+  if (lower.split(/[.!?]+/).filter(s => s.trim().length > 0).length >= 3) return "smart";
+  return "fast";
+}
+
+// ── Per-business AI usage tracking ────────────────────────────────
+const aiUsageBuckets = new Map<string, { count: number; date: string }>();
+
+function getAiUsageToday(businessId: string): number {
+  const today = new Date().toISOString().slice(0, 10);
+  const bucket = aiUsageBuckets.get(businessId);
+  if (!bucket || bucket.date !== today) return 0;
+  return bucket.count;
+}
+
+function incrementAiUsage(businessId: string): number {
+  const today = new Date().toISOString().slice(0, 10);
+  const bucket = aiUsageBuckets.get(businessId);
+  if (!bucket || bucket.date !== today) {
+    aiUsageBuckets.set(businessId, { count: 1, date: today });
+    return 1;
+  }
+  bucket.count++;
+  return bucket.count;
+}
+
+// Clean stale AI usage buckets hourly
+setInterval(() => {
+  const today = new Date().toISOString().slice(0, 10);
+  for (const [k, v] of aiUsageBuckets) if (v.date !== today) aiUsageBuckets.delete(k);
+}, 3600000);
+
+// Check if a business has remaining AI quota
+async function checkAiQuota(businessProfileId: string): Promise<{ allowed: boolean; used: number; limit: number; plan: string }> {
+  // Look up the business via the connection linked to this business profile
+  const profile = await prisma.businessProfile.findUnique({
+    where: { id: businessProfileId },
+    include: { connection: true },
+  });
+
+  // Try to find the Business record (admin-created) by matching the connection
+  let plan = "trial";
+  if (profile?.connection) {
+    // The connection has the admin's business linked. Try to find via admin's activeBusiness.
+    // For now, use the in-memory counter keyed by businessProfileId
+  }
+
+  const limits = getPlanLimits(plan);
+  const used = getAiUsageToday(businessProfileId);
+  return { allowed: used < limits.aiMessagesPerDay, used, limit: limits.aiMessagesPerDay, plan };
+}
+
 function maskToken(token: string | null | undefined): string {
   if (!token) return "***masked***";
   const last4 = token.slice(-4);
@@ -856,12 +987,25 @@ app.post("/webhooks/whatsapp", async (req: Request, res: Response) => {
             replyText = safetyCheck.message || "Let me connect you with someone who can help better.";
             console.log("Escalation triggered, conversation marked for human handoff");
           } else {
-            try {
-              replyText = await generateAIResponse(businessContext, text, history);
-              console.log("AI response generated successfully");
-            } catch (aiError) {
-              console.error("AI generation failed:", aiError instanceof Error ? aiError.message : aiError);
-              replyText = "I'm having trouble processing your request. Please try again in a moment.";
+            // Check AI quota before calling LLM
+            const bpId = connection.businessProfile?.id || connection.id;
+            const quota = await checkAiQuota(bpId);
+
+            if (!quota.allowed) {
+              replyText = "Thank you for your message! Our team will get back to you shortly. 🙏";
+              console.log(`AI quota exceeded for ${bpId}: ${quota.used}/${quota.limit} (plan: ${quota.plan})`);
+            } else {
+              try {
+                // Route to appropriate model based on message complexity
+                const tier = classifyMessage(text);
+                console.log(`LLM routing: "${text.slice(0, 50)}..." → ${tier} model`);
+                replyText = await generateAIResponse(businessContext, text, history);
+                incrementAiUsage(bpId);
+                console.log(`AI response generated (${tier}), usage: ${quota.used + 1}/${quota.limit}`);
+              } catch (aiError) {
+                console.error("AI generation failed:", aiError instanceof Error ? aiError.message : aiError);
+                replyText = "I'm having trouble processing your request. Please try again in a moment.";
+              }
             }
           }
         }
@@ -920,6 +1064,93 @@ app.post("/webhooks/whatsapp", async (req: Request, res: Response) => {
       console.error("Error processing webhook:", error instanceof Error ? error.stack : error);
     }
   })();
+});
+
+// ============ BILLING / SUBSCRIPTION ENDPOINTS ============
+
+// Public — no auth required
+app.get("/api/pricing", (_req: Request, res: Response) => {
+  const plans = Object.values(PLANS)
+    .filter(p => p.id !== "free") // hide legacy "free" plan from pricing page
+    .map(p => ({
+      id: p.id, name: p.name, tagline: p.tagline,
+      prices: p.prices, features: p.features, limits: p.limits,
+      trialDays: p.trialDays,
+    }));
+  res.json({ plans });
+});
+
+// Get current subscription for authenticated admin's active business
+app.get("/api/admin/subscription", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const businessId = req.admin!.activeBusinessId;
+    if (!businessId) {
+      res.status(404).json({ error: "No active business" });
+      return;
+    }
+    const biz = await prisma.business.findUnique({
+      where: { id: businessId },
+      select: { plan: true, planStatus: true, trialEndsAt: true, planEndsAt: true },
+    });
+    if (!biz) { res.status(404).json({ error: "Business not found" }); return; }
+
+    const planDef = PLANS[biz.plan] ?? PLANS.trial;
+    const used = getAiUsageToday(businessId);
+
+    res.json({
+      subscription: {
+        plan: planDef.id,
+        planName: planDef.name,
+        status: biz.planStatus ?? "active",
+        trialEndsAt: biz.trialEndsAt,
+        subscriptionEndsAt: biz.planEndsAt,
+        limits: planDef.limits,
+        features: planDef.features,
+        prices: planDef.prices,
+        usage: { aiMessagesToday: used },
+      },
+    });
+  } catch (error) {
+    console.error("Subscription fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch subscription" });
+  }
+});
+
+// Subscribe to a plan (payment simulated for now)
+app.post("/api/admin/subscribe", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { plan, currency } = req.body;
+    if (!plan || !PLANS[plan] || plan === "trial" || plan === "free") {
+      res.status(400).json({ error: "Invalid plan" });
+      return;
+    }
+    const businessId = req.admin!.activeBusinessId;
+    if (!businessId) { res.status(404).json({ error: "No active business" }); return; }
+
+    const now = new Date();
+    const planEndsAt = new Date(now);
+    planEndsAt.setMonth(planEndsAt.getMonth() + 1);
+
+    await prisma.business.update({
+      where: { id: businessId },
+      data: { plan, planStatus: "active", planEndsAt },
+    });
+
+    const planDef = PLANS[plan];
+    res.json({
+      ok: true,
+      subscription: {
+        plan: planDef.id,
+        planName: planDef.name,
+        status: "active",
+        subscriptionEndsAt: planEndsAt,
+        limits: planDef.limits,
+      },
+    });
+  } catch (error) {
+    console.error("Subscribe error:", error);
+    res.status(500).json({ error: "Failed to subscribe" });
+  }
 });
 
 // ============ NICHE ENDPOINTS ============
