@@ -1153,6 +1153,95 @@ app.post("/api/admin/subscribe", requireAdminAuth as any, async (req: Authentica
   }
 });
 
+// ============ MOBILE MONEY PAYMENTS (Africa's Talking) ============
+
+const AT_CHECKOUT_URL_LIVE = "https://payments.africastalking.com/mobile/checkout/request";
+const AT_CHECKOUT_URL_SANDBOX = "https://payments.sandbox.africastalking.com/mobile/checkout/request";
+
+app.post("/api/admin/pay", requireAdminAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { plan, phoneNumber } = req.body;
+    if (!plan || !PLANS[plan] || plan === "trial" || plan === "free") {
+      res.status(400).json({ error: "Invalid plan" }); return;
+    }
+    if (!phoneNumber) { res.status(400).json({ error: "Phone number is required" }); return; }
+
+    const atApiKey = process.env.AT_API_KEY;
+    const atUsername = process.env.AT_USERNAME;
+    if (!atApiKey || !atUsername) {
+      res.status(503).json({ error: "Payment provider not configured" }); return;
+    }
+
+    const businessId = req.admin!.activeBusinessId;
+    if (!businessId) { res.status(404).json({ error: "No active business" }); return; }
+
+    const planDef = PLANS[plan];
+    const currency = "TZS";
+    const amount = planDef.prices["TSH"] ?? planDef.prices["USD"] ?? 0;
+    const isSandbox = atUsername.toLowerCase() === "sandbox";
+    const url = isSandbox ? AT_CHECKOUT_URL_SANDBOX : AT_CHECKOUT_URL_LIVE;
+
+    const atRes = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apiKey": atApiKey, Accept: "application/json" },
+      body: JSON.stringify({
+        username: atUsername,
+        productName: process.env.AT_PRODUCT_NAME || "Sema Subscription",
+        phoneNumber,
+        currencyCode: currency,
+        amount,
+        metadata: { businessId, adminId: req.admin!.id, plan },
+      }),
+    });
+
+    if (!atRes.ok) {
+      const text = await atRes.text();
+      console.error("AT Payments error:", text);
+      res.status(400).json({ error: "Payment request failed" }); return;
+    }
+
+    const result = await atRes.json();
+    if (result.status === "PendingConfirmation") {
+      res.json({ ok: true, status: "pending", message: "Check your phone for the M-Pesa prompt", transactionId: result.transactionId });
+    } else {
+      res.status(400).json({ ok: false, status: result.status, message: result.description });
+    }
+  } catch (error) {
+    console.error("Pay error:", error);
+    res.status(500).json({ error: "Payment failed" });
+  }
+});
+
+app.get("/api/admin/payment-status", requireAdminAuth as any, (_req: Request, res: Response) => {
+  res.json({
+    configured: !!(process.env.AT_API_KEY && process.env.AT_USERNAME),
+    provider: "africastalking",
+    methods: ["mpesa", "airtel_money", "tigo_pesa"],
+  });
+});
+
+// AT payment callback — configure this URL in your AT dashboard
+app.post("/webhooks/payments/callback", async (req: Request, res: Response) => {
+  try {
+    const n = req.body;
+    console.log(`[AT Payment] ${n.status}: ${n.transactionId} - ${n.value}`);
+
+    if (n.status === "Success" && n.requestMetadata?.businessId && n.requestMetadata?.plan) {
+      const planEndsAt = new Date();
+      planEndsAt.setMonth(planEndsAt.getMonth() + 1);
+      await prisma.business.update({
+        where: { id: n.requestMetadata.businessId },
+        data: { plan: n.requestMetadata.plan, planStatus: "active", planEndsAt },
+      });
+      console.log(`[AT Payment] Activated ${n.requestMetadata.plan} for ${n.requestMetadata.businessId}`);
+    }
+    res.status(200).json({ ok: true });
+  } catch (error) {
+    console.error("[AT Payment] Callback error:", error);
+    res.status(200).json({ ok: true });
+  }
+});
+
 // ============ NICHE ENDPOINTS ============
 
 app.get("/api/niches", async (_req: Request, res: Response) => {
